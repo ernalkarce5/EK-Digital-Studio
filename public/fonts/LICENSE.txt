@@ -1,0 +1,7 @@
+Fonts in this folder are redistributed unmodified under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org). They are subsets (latin, latin-ext) as served by Google Fonts.
+
+- Geist, Geist Mono: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
+- Instrument Serif: Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif)
+
+The full license text is available at https://openfontlicense.org/open-font-license-official-text/

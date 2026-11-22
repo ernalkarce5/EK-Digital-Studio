@@ -1,0 +1,27 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+.env.*
+# Must stay after the .env rules above so the template is still committed.
+!.env.example
+.netlify
+test-results
+playwright-report
+*.log
+.DS_Store
+dist-e2e
+
+# Supabase CLI local state (project ref, branch data)
+supabase/.temp/
+supabase/.branches/
+
+# Keys and credentials
+*.pem
+*.key
+service-account*.json
+
+# Editor / tool settings
+.vscode/
+.claude/settings.local.json

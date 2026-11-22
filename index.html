@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0B0D12" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Ernal Karce — EK Digital Studio</title>
+    <meta name="description" content="Web design and development studio of Ernal Karce. Websites, booking systems and custom web applications built with care." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="EK Digital Studio" />
+    <meta property="og:title" content="Ernal Karce — EK Digital Studio" />
+    <meta property="og:description" content="Web design and development studio of Ernal Karce." />
+    <!-- __SITE_URL__ is replaced at build time with VITE_SITE_URL (see vite.config.ts). -->
+    <meta property="og:image" content="__SITE_URL__/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="__SITE_URL__/og-image.png" />
+    <!-- Self-hosted fonts: preload the two visible above the fold. -->
+    <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/instrument-serif-italic-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Applies the saved theme before first paint (external file, so the CSP needs no inline scripts). -->
+    <script src="/theme-init.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>This website requires JavaScript.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
