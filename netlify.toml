@@ -2,6 +2,11 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  # Server-side code (moderator invitations). Uses SUPABASE_SERVICE_ROLE_KEY,
+  # which must be set in Netlify with the "Functions" scope and never VITE_-prefixed.
+  directory = "netlify/functions"
+
 [build.environment]
   NODE_VERSION = "22"
 
@@ -42,5 +47,10 @@
 
 [[headers]]
   for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/moderator/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"

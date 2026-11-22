@@ -6,7 +6,7 @@ import { z } from '@/lib/zod';
 import { AlertCircle, LogIn } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { FormField, Input } from '@/components/forms/Field';
-import { useAuth } from '@/contexts/AuthContext';
+import { AREA_PATHS, useAuth, type AuthArea } from '@/contexts/AuthContext';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { toErrorMessage } from '@/lib/errors';
 import { AuthShell } from './AuthShell';
@@ -17,11 +17,17 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
-export default function LoginPage() {
-  const { session, isAdmin, loading, signIn } = useAuth();
+const COPY: Record<AuthArea, { title: string; description: string }> = {
+  admin: { title: 'Admin sign in', description: 'Restricted area. Authorized administrators only.' },
+  moderator: { title: 'Moderator sign in', description: 'Sign in to manage the clients assigned to you.' },
+};
+
+export default function LoginPage({ area = 'admin' }: { area?: AuthArea }) {
+  const { session, role, loading, signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? '/admin';
+  const paths = AREA_PATHS[area];
+  const from = (location.state as { from?: string } | null)?.from ?? paths.home;
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -30,13 +36,13 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<Values>({ resolver: zodResolver(schema) });
 
-  if (!loading && session && isAdmin) return <Navigate to={from} replace />;
+  if (!loading && session && role === area) return <Navigate to={from} replace />;
 
   const onSubmit = handleSubmit(async ({ email, password }) => {
     setError(null);
     try {
-      await signIn(email, password);
-      navigate(from.startsWith('/admin') ? from : '/admin', { replace: true });
+      await signIn(email, password, area);
+      navigate(from.startsWith(paths.home) ? from : paths.home, { replace: true });
     } catch (err) {
       const msg = toErrorMessage(err);
       setError(/invalid login credentials/i.test(msg) ? 'Incorrect email or password.' : msg);
@@ -44,7 +50,7 @@ export default function LoginPage() {
   });
 
   return (
-    <AuthShell title="Admin sign in" description="Restricted area. Authorized administrators only.">
+    <AuthShell title={COPY[area].title} description={COPY[area].description}>
       {!isSupabaseConfigured ? (
         <p role="alert" className="text-sm text-warning">
           {import.meta.env.DEV ? (
@@ -80,7 +86,7 @@ export default function LoginPage() {
             Sign in
           </Button>
           <p className="text-center text-sm">
-            <Link to="/admin/forgot-password" className="text-muted underline-offset-4 hover:text-fg hover:underline">
+            <Link to={`${paths.home}/forgot-password`} className="text-muted underline-offset-4 hover:text-fg hover:underline">
               Forgot your password?
             </Link>
           </p>

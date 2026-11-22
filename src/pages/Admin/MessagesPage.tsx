@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router';
-import { Archive, Inbox, Mail, MailCheck, MessageCircle, Reply, Trash2 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router';
+import { Archive, ArrowUpRight, Inbox, Mail, MailCheck, MessageCircle, Reply, Trash2, UserCheck, UserPlus } from 'lucide-react';
 import { formatPhone, telLink, whatsappLink } from '@/lib/phone';
 import { AdminPageHeader, MessageStatusBadge } from '@/components/admin/AdminUI';
 import { Button } from '@/components/common/Button';
@@ -10,25 +10,35 @@ import { Select } from '@/components/forms/Field';
 import { useToast } from '@/contexts/ToastContext';
 import { useAsync } from '@/hooks/useAsync';
 import { deleteMessage, listMessages, setMessageStatus } from '@/services/messages';
+import { assignLead, currentAssignmentsByMessage, notifyLeadsChanged, type LeadSummary } from '@/services/leads';
+import { LeadStatusBadge } from '@/components/leads/LeadStatusBadge';
+import { ModeratorPickerDialog } from '@/components/leads/LeadDialogs';
 import { CONTACT_METHODS, MESSAGE_STATUS_LABELS } from '@/lib/constants';
 import { toErrorMessage } from '@/lib/errors';
 import { cn, formatDate, formatRelative } from '@/lib/utils';
 import type { ContactMessage, MessageStatus } from '@/types/database';
 
-const TABS: Array<MessageStatus | 'all'> = ['all', 'new', 'read', 'replied', 'archived'];
+type TabKey = MessageStatus | 'all' | 'assigned';
+/** Status tabs list UNASSIGNED inquiries; "Assigned" lists those handed to moderators. */
+const TABS: TabKey[] = ['all', 'new', 'read', 'replied', 'archived', 'assigned'];
+const tabLabel = (t: TabKey) => (t === 'all' ? 'Inbox' : t === 'assigned' ? 'Assigned' : MESSAGE_STATUS_LABELS[t]);
 
 const notifyChange = () => window.dispatchEvent(new Event('ek:messages-changed'));
 
 function MessageDetail({
   message,
+  assignment,
   busy,
   onStatus,
   onDelete,
+  onAssign,
 }: {
   message: ContactMessage;
+  assignment: LeadSummary | null;
   busy: boolean;
   onStatus: (s: MessageStatus) => void;
   onDelete: () => void;
+  onAssign: () => void;
 }) {
   const subject = encodeURIComponent(`Re: your ${message.project_type.toLowerCase()} inquiry`);
   const preferred = CONTACT_METHODS.find((m) => m.value === message.preferred_contact)?.label;
@@ -61,6 +71,25 @@ function MessageDetail({
         </div>
         <MessageStatusBadge status={message.status} />
       </header>
+      {assignment ? (
+        <div className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <UserCheck className="size-4 shrink-0 text-accent" aria-hidden />
+          <span className="min-w-0 flex-1">
+            Assigned to <strong className="font-medium">{assignment.moderator?.full_name ?? 'a moderator'}</strong>
+          </span>
+          <LeadStatusBadge status={assignment.status} />
+          <Link to={`/admin/leads/${message.id}`} className="inline-flex items-center gap-1 text-accent-2 hover:underline">
+            Open lead <ArrowUpRight className="size-3.5" aria-hidden />
+          </Link>
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-line-strong px-4 py-3 text-sm">
+          <span className="text-muted">Not assigned. Hand this inquiry to a moderator to follow up.</span>
+          <Button size="sm" icon={UserPlus} onClick={onAssign} disabled={busy}>
+            Assign to Moderator
+          </Button>
+        </div>
+      )}
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border border-line bg-bg-2 p-4 text-sm">
         {rows.map(([k, v]) => (
           <div key={k} className="min-w-0">
@@ -107,9 +136,12 @@ function MessageDetail({
             ))}
           </Select>
         </div>
-        <Button size="sm" variant="ghost" icon={Trash2} onClick={onDelete} disabled={busy} className="ml-auto hover:text-danger">
-          Delete
-        </Button>
+        {/* Assigned inquiries are part of a lead's history and cannot be deleted (FK restrict). */}
+        {!assignment && (
+          <Button size="sm" variant="ghost" icon={Trash2} onClick={onDelete} disabled={busy} className="ml-auto hover:text-danger">
+            Delete
+          </Button>
+        )}
       </div>
     </article>
   );
@@ -118,9 +150,11 @@ function MessageDetail({
 export default function MessagesPage() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const tab = (params.get('status') as MessageStatus | 'all') || 'all';
+  const tab = (params.get('status') as TabKey) || 'all';
   const selectedId = params.get('id');
   const { data, loading, error, reload, setData } = useAsync(() => listMessages('all'), []);
+  const assignments = useAsync(currentAssignmentsByMessage, []);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState<ContactMessage | null>(null);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
@@ -133,7 +167,14 @@ export default function MessagesPage() {
   }, []);
 
   const messages = useMemo(() => data ?? [], [data]);
-  const visible = tab === 'all' ? messages.filter((m) => m.status !== 'archived') : messages.filter((m) => m.status === tab);
+  const assigned = useMemo(() => assignments.data ?? new Map<string, LeadSummary>(), [assignments.data]);
+  const unassigned = messages.filter((m) => !assigned.has(m.id));
+  const visible =
+    tab === 'assigned'
+      ? messages.filter((m) => assigned.has(m.id))
+      : tab === 'all'
+        ? unassigned.filter((m) => m.status !== 'archived')
+        : unassigned.filter((m) => m.status === tab);
   const selected = messages.find((m) => m.id === selectedId) ?? null;
 
   // Functional updates so a quick tab switch + click never drops the status filter.
@@ -148,7 +189,7 @@ export default function MessagesPage() {
       { replace: true },
     );
   };
-  const selectTab = (t: MessageStatus | 'all') => {
+  const selectTab = (t: TabKey) => {
     setParams(
       (prev) => {
         const next = new URLSearchParams();
@@ -194,19 +235,44 @@ export default function MessagesPage() {
       setToDelete(null);
     } catch (err) {
       toast.error(toErrorMessage(err));
+      setToDelete(null);
     } finally {
       setBusy(false);
     }
   };
 
-  const emptyTitle = tab === 'all' ? 'Inbox is empty' : `No ${MESSAGE_STATUS_LABELS[tab].toLowerCase()} messages`;
+  const emptyTitle =
+    tab === 'all' ? 'Inbox is empty' : tab === 'assigned' ? 'No assigned inquiries' : `No ${MESSAGE_STATUS_LABELS[tab].toLowerCase()} messages`;
 
-  const count = (s: MessageStatus | 'all') =>
-    s === 'all' ? messages.filter((m) => m.status !== 'archived').length : messages.filter((m) => m.status === s).length;
+  const count = (s: TabKey) =>
+    s === 'assigned'
+      ? messages.filter((m) => assigned.has(m.id)).length
+      : s === 'all'
+        ? unassigned.filter((m) => m.status !== 'archived').length
+        : unassigned.filter((m) => m.status === s).length;
+
+  const confirmAssign = async (moderatorId: string, note: string) => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await assignLead(selected.id, moderatorId, note);
+      toast.success('Assigned. The moderator has been notified.');
+      setAssignOpen(false);
+      notifyLeadsChanged();
+      notifyChange();
+      assignments.reload();
+    } catch (err) {
+      toast.error(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const detail = selected && (
     <MessageDetail
       message={selected}
+      assignment={assigned.get(selected.id) ?? null}
+      onAssign={() => setAssignOpen(true)}
       busy={busy}
       onStatus={(s) => void changeStatus(selected, s)}
       onDelete={() => setToDelete(selected)}
@@ -230,16 +296,22 @@ export default function MessagesPage() {
               tab === t ? 'bg-card text-fg' : 'text-muted hover:text-fg',
             )}
           >
-            {t === 'all' ? 'Inbox' : MESSAGE_STATUS_LABELS[t]}
+            {tabLabel(t)}
             <span className="ml-1.5 font-mono text-[11px] text-subtle">{count(t)}</span>
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {loading || assignments.loading ? (
         <LoadingBlock />
-      ) : error ? (
-        <ErrorState message={error} onRetry={reload} />
+      ) : error || assignments.error ? (
+        <ErrorState
+          message={error ?? assignments.error}
+          onRetry={() => {
+            reload();
+            assignments.reload();
+          }}
+        />
       ) : !visible.length && !(isDesktop && selected) ? (
         <EmptyState icon={tab === 'archived' ? Archive : Inbox} title={emptyTitle} />
       ) : (
@@ -290,6 +362,16 @@ export default function MessagesPage() {
           {detail}
         </Modal>
       )}
+
+      <ModeratorPickerDialog
+        open={assignOpen}
+        title="Assign to Moderator"
+        description={selected ? `${selected.full_name} will move to the moderator’s Assigned Leads. The original inquiry stays here in full.` : undefined}
+        confirmLabel="Assign"
+        busy={busy}
+        onClose={() => setAssignOpen(false)}
+        onConfirm={(id, note) => void confirmAssign(id, note)}
+      />
 
       <ConfirmDialog
         open={!!toDelete}

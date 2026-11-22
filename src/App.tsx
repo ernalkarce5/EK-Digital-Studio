@@ -33,6 +33,22 @@ const AdminTestimonials = lazy(() => import('@/pages/Admin/TestimonialsPage'));
 const AdminMedia = lazy(() => import('@/pages/Admin/MediaPage'));
 const AdminProfile = lazy(() => import('@/pages/Admin/ProfilePage'));
 const AdminSettings = lazy(() => import('@/pages/Admin/SettingsPage'));
+const AdminModerators = lazy(() => import('@/pages/Admin/ModeratorsPage'));
+const AdminAssignments = lazy(() => import('@/pages/Admin/AssignmentsPage'));
+const AdminBriefs = lazy(() => import('@/pages/Admin/BriefsReviewPage'));
+const AdminLeadActivity = lazy(() => import('@/pages/Admin/LeadActivityPage'));
+const AdminLead = lazy(() => import('@/pages/Admin/AdminLeadPage'));
+const NotificationsPage = lazy(() => import('@/pages/Notifications/NotificationsPage'));
+
+// Moderator bundle: loaded only when visiting /moderator.
+const ModeratorLayout = lazy(() => import('@/components/moderator/ModeratorLayout'));
+const ModeratorOverview = lazy(() => import('@/pages/Moderator/OverviewPage'));
+const ModeratorLeads = lazy(() => import('@/pages/Moderator/LeadsPage'));
+const ModeratorLead = lazy(() => import('@/pages/Moderator/LeadPage'));
+const ModeratorCommunication = lazy(() => import('@/pages/Moderator/CommunicationPage'));
+const ModeratorBriefs = lazy(() => import('@/pages/Moderator/BriefsPage'));
+const ModeratorArchive = lazy(() => import('@/pages/Moderator/ArchivePage'));
+const ModeratorProfile = lazy(() => import('@/pages/Moderator/ProfilePage'));
 
 const page = (node: ReactNode) => (
   <Suspense fallback={<LoadingBlock className="min-h-[70dvh]" label="Loading…" />}>{node}</Suspense>
@@ -71,6 +87,29 @@ const router = createBrowserRouter([
       { path: 'media', element: page(<AdminMedia />) },
       { path: 'profile', element: page(<AdminProfile />) },
       { path: 'settings', element: page(<AdminSettings />) },
+      { path: 'moderators', element: page(<AdminModerators />) },
+      { path: 'assignments', element: page(<AdminAssignments />) },
+      { path: 'briefs', element: page(<AdminBriefs />) },
+      { path: 'activity', element: page(<AdminLeadActivity />) },
+      { path: 'leads/:messageId', element: page(<AdminLead />) },
+      { path: 'notifications', element: page(<NotificationsPage area="admin" />) },
+    ],
+  },
+  { path: 'moderator/login', element: page(<AdminLogin area="moderator" />) },
+  { path: 'moderator/forgot-password', element: page(<AdminForgotPassword area="moderator" />) },
+  { path: 'moderator/set-password', element: page(<AdminResetPassword area="moderator" />) },
+  {
+    path: 'moderator',
+    element: page(<ModeratorLayout />),
+    children: [
+      { index: true, element: page(<ModeratorOverview />) },
+      { path: 'leads', element: page(<ModeratorLeads />) },
+      { path: 'leads/:messageId', element: page(<ModeratorLead />) },
+      { path: 'communication', element: page(<ModeratorCommunication />) },
+      { path: 'briefs', element: page(<ModeratorBriefs />) },
+      { path: 'archive', element: page(<ModeratorArchive />) },
+      { path: 'profile', element: page(<ModeratorProfile />) },
+      { path: 'notifications', element: page(<NotificationsPage area="moderator" />) },
     ],
   },
 ]);

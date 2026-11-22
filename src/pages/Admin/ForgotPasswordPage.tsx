@@ -6,14 +6,14 @@ import { z } from '@/lib/zod';
 import { AlertCircle, MailCheck } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { FormField, Input } from '@/components/forms/Field';
-import { useAuth } from '@/contexts/AuthContext';
+import { AREA_PATHS, useAuth, type AuthArea } from '@/contexts/AuthContext';
 import { toErrorMessage } from '@/lib/errors';
 import { AuthShell } from './AuthShell';
 
 const schema = z.object({ email: z.string().trim().email('Enter a valid email address.') });
 type Values = z.infer<typeof schema>;
 
-export default function ForgotPasswordPage() {
+export default function ForgotPasswordPage({ area = 'admin' }: { area?: AuthArea }) {
   const { sendPasswordReset } = useAuth();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
   const onSubmit = handleSubmit(async ({ email }) => {
     setError(null);
     try {
-      await sendPasswordReset(email);
+      await sendPasswordReset(email, area);
       setSent(true);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -39,10 +39,10 @@ export default function ForgotPasswordPage() {
         <div role="status" className="text-center">
           <MailCheck className="mx-auto size-8 text-success" aria-hidden />
           <p className="mt-4 text-sm leading-relaxed text-muted">
-            If an administrator account exists for that address, a reset link is on its way. The link expires after a
+            If {area === 'admin' ? 'an administrator' : 'a moderator'} account exists for that address, a reset link is on its way. The link expires after a
             short time.
           </p>
-          <Button to="/admin/login" variant="secondary" className="mt-6 w-full">
+          <Button to={AREA_PATHS[area].login} variant="secondary" className="mt-6 w-full">
             Back to sign in
           </Button>
         </div>
@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
             Send reset link
           </Button>
           <p className="text-center text-sm">
-            <Link to="/admin/login" className="text-muted hover:text-fg">
+            <Link to={AREA_PATHS[area].login} className="text-muted hover:text-fg">
               Back to sign in
             </Link>
           </p>

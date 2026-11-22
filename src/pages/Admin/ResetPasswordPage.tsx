@@ -7,7 +7,7 @@ import { AlertCircle } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { LoadingBlock } from '@/components/common/Feedback';
 import { FormField, Input } from '@/components/forms/Field';
-import { useAuth } from '@/contexts/AuthContext';
+import { AREA_PATHS, useAuth, type AuthArea } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { toErrorMessage } from '@/lib/errors';
 import { AuthShell } from './AuthShell';
@@ -20,7 +20,8 @@ const schema = z
   .refine((v) => v.password === v.confirm, { path: ['confirm'], message: 'Passwords do not match.' });
 type Values = z.infer<typeof schema>;
 
-export default function ResetPasswordPage() {
+/** Also used as the moderator invite landing page ("Set your password"). */
+export default function ResetPasswordPage({ area = 'admin' }: { area?: AuthArea }) {
   const { session, loading, updatePassword } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -36,20 +37,20 @@ export default function ResetPasswordPage() {
     try {
       await updatePassword(password);
       toast.success('Password updated.');
-      navigate('/admin', { replace: true });
+      navigate(AREA_PATHS[area].home, { replace: true });
     } catch (err) {
       setError(toErrorMessage(err));
     }
   });
 
   return (
-    <AuthShell title="Choose a new password">
+    <AuthShell title={area === 'moderator' ? 'Set your password' : 'Choose a new password'}>
       {loading ? (
         <LoadingBlock className="min-h-24" label="Verifying link…" />
       ) : !session ? (
         <div className="text-center">
-          <p className="text-sm text-muted">This reset link is invalid or has expired. Request a new one.</p>
-          <Button to="/admin/forgot-password" variant="secondary" className="mt-6 w-full">
+          <p className="text-sm text-muted">This link is invalid or has expired. Request a new one.</p>
+          <Button to={`${AREA_PATHS[area].home}/forgot-password`} variant="secondary" className="mt-6 w-full">
             Request new link
           </Button>
         </div>

@@ -62,15 +62,22 @@ export async function setMessageStatus(id: string, status: MessageStatus): Promi
 }
 
 export async function deleteMessage(id: string): Promise<void> {
-  const rows = unwrap(await db().from('contact_messages').delete().eq('id', id).select('id')) as { id: string }[];
+  const res = await db().from('contact_messages').delete().eq('id', id).select('id');
+  if ((res.error as { code?: string } | null)?.code === '23503') {
+    // Assignment rows reference the message (on delete restrict): its history must be kept.
+    throw new Error('This inquiry has been assigned to a moderator, so its history is kept. Archive it instead of deleting.');
+  }
+  const rows = unwrap(res) as { id: string }[];
   if (!rows.length) throw new Error('The message could not be deleted (not found or not permitted).');
 }
 
+/** Unread inquiries still in the admin's unassigned inbox (assigned leads are handled by moderators). */
 export async function countUnreadMessages(): Promise<number> {
-  const { count, error } = await db()
-    .from('contact_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'new');
-  if (error) throw error;
-  return count ?? 0;
+  const [unread, assigned] = await Promise.all([
+    db().from('contact_messages').select('id').eq('status', 'new').limit(1000),
+    db().from('lead_assignments').select('message_id').is('released_at', null),
+  ]);
+  const ids = (unwrap(unread) ?? []) as { id: string }[];
+  const taken = new Set(((unwrap(assigned) ?? []) as { message_id: string }[]).map((a) => a.message_id));
+  return ids.filter((m) => !taken.has(m.id)).length;
 }

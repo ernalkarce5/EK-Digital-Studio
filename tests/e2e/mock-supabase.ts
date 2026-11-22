@@ -8,14 +8,19 @@
  * this mock exists so the UI can be exercised end to end without a project.
  */
 import type { BrowserContext, Route } from '@playwright/test';
+import { LEAD_TABLES, LeadsMock, type Role, type Session } from './mock-leads';
 
 export const MOCK_URL = 'http://mock-supabase.test';
 export const ANON_KEY = 'e2e-anon-key';
 export const ADMIN = { id: '11111111-1111-4111-8111-111111111111', email: 'admin@example.com', password: 'correct-horse-battery' };
 export const NON_ADMIN = { id: '22222222-2222-4222-8222-222222222222', email: 'user@example.com', password: 'user-password-123' };
+export const MOD1 = { id: '33333333-3333-4333-8333-333333333333', email: 'mila@example.com', password: 'moderator-one-pass', name: 'Mila Moderator' };
+export const MOD2 = { id: '44444444-4444-4444-8444-444444444444', email: 'noah@example.com', password: 'moderator-two-pass', name: 'Noah Moderator' };
+/** Exists in the mock "auth.users" but is not a moderator yet. */
+export const NEW_USER = { id: '55555555-5555-4555-8555-555555555555', email: 'sara@example.com', password: 'new-user-pass-123', name: 'Sara New' };
+const ACCOUNTS: Array<{ id: string; email: string; password: string; name?: string }> = [ADMIN, NON_ADMIN, MOD1, MOD2, NEW_USER];
 
 type Row = Record<string, unknown> & { id: string | number };
-type Role = 'anon' | 'user' | 'admin';
 
 const PNG_1x1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkqPhfDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -119,6 +124,16 @@ export function seedData() {
     site_settings,
     profiles,
     contact_messages: [] as Row[],
+    moderators: [MOD1, MOD2].map((m) => ({
+      id: m.id, full_name: m.name, email: m.email, is_active: true, created_by: ADMIN.id, deactivated_at: null, created_at: now(), updated_at: now(),
+    })) as Row[],
+    lead_assignments: [] as Row[],
+    lead_clients: [] as Row[],
+    project_briefs: [] as Row[],
+    communication_logs: [] as Row[],
+    lead_notes: [] as Row[],
+    internal_notifications: [] as Row[],
+    lead_activity_logs: [] as Row[],
     testimonials: [] as Row[],
     admin_activity_logs: [] as Row[],
   };
@@ -152,16 +167,27 @@ export class MockSupabase {
     ['general/unused.png', { name: 'unused.png', created_at: now(), size: 900, mimetype: 'image/png' }],
   ]);
   rpcCalls: Array<{ fn: string; body: Record<string, unknown> }> = [];
-  private tokens = new Map<string, Role>([[ANON_KEY, 'anon']]);
+  /** access token -> user id (null = anon key). Roles are derived live, like RLS. */
+  private tokens = new Map<string, string | null>([[ANON_KEY, null]]);
+  authUsers = new Map<string, string>(ACCOUNTS.map((a) => [a.email, a.id]));
+  leads = new LeadsMock(this.db as never, this.authUsers);
 
   /** Installed on the browser context so every tab (admin + public) shares one backend. */
   async install(context: BrowserContext) {
     await context.route(`${MOCK_URL}/**`, (route) => this.handle(route));
   }
 
-  private role(route: Route): Role {
+  private session(route: Route): Session {
     const auth = route.request().headers()['authorization']?.replace(/^Bearer\s+/i, '') ?? ANON_KEY;
-    return this.tokens.get(auth) ?? 'anon';
+    const uid = this.tokens.get(auth) ?? null;
+    if (!uid) return { role: 'anon', uid: null };
+    if (uid === ADMIN.id) return { role: 'admin', uid };
+    if (this.leads.isActiveModerator(uid)) return { role: 'moderator', uid };
+    return { role: 'user', uid };
+  }
+
+  private role(route: Route): Role {
+    return this.session(route).role;
   }
 
   private json(route: Route, status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -197,11 +223,11 @@ export class MockSupabase {
   private handleAuth(route: Route, endpoint: string, url: URL) {
     const body = (route.request().postDataJSON() ?? {}) as Record<string, string>;
     if (endpoint === 'token' && url.searchParams.get('grant_type') === 'password') {
-      const account = [ADMIN, NON_ADMIN].find((a) => a.email === body.email && a.password === body.password);
+      const account = ACCOUNTS.find((a) => a.email === body.email && a.password === body.password);
       if (!account) return this.json(route, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', code: 'invalid_credentials', msg: 'Invalid login credentials' });
       const token = fakeJwt(account.id, account.email);
-      this.tokens.set(token, account === ADMIN ? 'admin' : 'user');
-      const user = { id: account.id, aud: 'authenticated', role: 'authenticated', email: account.email, app_metadata: {}, user_metadata: {}, created_at: now() };
+      this.tokens.set(token, account.id);
+      const user = { id: account.id, aud: 'authenticated', role: 'authenticated', email: account.email, app_metadata: {}, user_metadata: { full_name: account.name }, created_at: now() };
       return this.json(route, 200, {
         access_token: token, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600,
         refresh_token: `refresh-${account.id}`, user,
@@ -209,9 +235,13 @@ export class MockSupabase {
     }
     if (endpoint === 'logout') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
     if (endpoint === 'recover') return this.json(route, 200, {});
+    if (endpoint === 'user' && route.request().method() === 'PUT') {
+      const acc = ACCOUNTS.find((a) => a.id === this.session(route).uid);
+      return acc ? this.json(route, 200, { id: acc.id, email: acc.email, aud: 'authenticated', role: 'authenticated' }) : this.json(route, 401, { message: 'invalid JWT' });
+    }
     if (endpoint === 'user') {
-      const role = this.role(route);
-      const acc = role === 'admin' ? ADMIN : role === 'user' ? NON_ADMIN : null;
+      const { uid } = this.session(route);
+      const acc = ACCOUNTS.find((a) => a.id === uid) ?? null;
       if (!acc) return this.json(route, 401, { message: 'invalid JWT' });
       return this.json(route, 200, { id: acc.id, email: acc.email, aud: 'authenticated', role: 'authenticated' });
     }
@@ -223,6 +253,8 @@ export class MockSupabase {
     const role = this.role(route);
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
     this.rpcCalls.push({ fn, body });
+    const lead = this.leads.rpc(fn, body, this.session(route));
+    if (lead) return this.json(route, lead.status, lead.body);
     if (fn === 'is_admin') return this.json(route, 200, role === 'admin');
     if (fn === 'submit_contact_message') {
       if (body.p_website || (typeof body.p_elapsed_ms === 'number' && body.p_elapsed_ms < 2000)) return this.json(route, 200, { ok: true });
@@ -327,6 +359,13 @@ export class MockSupabase {
         const c = this.db.categories.find((x) => x.id === r.category_id);
         row.category = c ? { id: c.id, name: c.name, slug: c.slug } : null;
       }
+      if (table === 'lead_assignments' && select?.includes('message:contact_messages')) {
+        row.message = this.db.contact_messages.find((m) => m.id === r.message_id) ?? null;
+      }
+      if (table === 'lead_assignments' && select?.includes('moderator:moderators')) {
+        const m = this.db.moderators.find((x) => x.id === r.moderator_id);
+        row.moderator = m ? { id: m.id, full_name: m.full_name, email: m.email, is_active: m.is_active } : null;
+      }
       if (table === 'categories' && select?.includes('projects(count)')) {
         row.projects = [{ count: this.db.projects.filter((p) => p.category_id === r.id).length }];
       }
@@ -350,16 +389,20 @@ export class MockSupabase {
   private handleRest(route: Route, table: TableName, url: URL) {
     const req = route.request();
     const method = req.method();
-    const role = this.role(route);
+    const sess = this.session(route);
+    const role = sess.role;
     const params = url.searchParams;
     const select = params.get('select');
     const rows = this.db[table] as Row[] | undefined;
     if (!rows) return this.json(route, 404, { code: '42P01', message: `relation ${table} does not exist` });
 
-    const visible = role === 'admin' ? rows : rows.filter(PUBLIC_FILTER[table] ?? (() => false));
+    const isLead = (LEAD_TABLES as readonly string[]).includes(table);
+    const leadVisible = this.leads.visible(table, sess, rows);
+    if (leadVisible === 'denied') return this.json(route, 403, { code: '42501', message: `permission denied for table ${table}` });
+    const visible = leadVisible ?? (role === 'admin' ? rows : rows.filter(PUBLIC_FILTER[table] ?? (() => false)));
 
     if (method === 'GET' || method === 'HEAD') {
-      if (role !== 'admin' && (table === 'contact_messages' || table === 'admin_activity_logs')) {
+      if (leadVisible === null && role !== 'admin' && (table === 'contact_messages' || table === 'admin_activity_logs')) {
         return this.json(route, 403, { code: '42501', message: `permission denied for table ${table}` });
       }
       const result = this.filter(visible, params);
@@ -369,7 +412,50 @@ export class MockSupabase {
       return this.respondRows(route, table, result, select);
     }
 
-    if (role !== 'admin') return this.json(route, 403, { code: '42501', message: 'new row violates row-level security policy' });
+    // Admins write through the generic path (except notifications, which are recipient-only).
+    const adminWrite = role === 'admin' && table !== 'internal_notifications';
+    const rls = () => this.json(route, 403, { code: '42501', message: `new row violates row-level security policy for table "${table}"` });
+    if (!adminWrite) {
+      if (!isLead || role === 'anon') return rls();
+      if (method === 'POST') {
+        const items = [req.postDataJSON()].flat() as Row[];
+        const created: Row[] = [];
+        for (const item of items) {
+          if (table === 'project_briefs' && ('submitted_at' in item || 'approved_at' in item)) {
+            return this.json(route, 403, { code: '42501', message: 'permission denied for table project_briefs' });
+          }
+          const row: Row = { created_at: now(), updated_at: now(), ...item, id: item.id ?? uuid() };
+          this.leads.stamp(table, sess, row);
+          if (!this.leads.canWrite(table, 'insert', sess, row)) return rls();
+          if (rows.some((r) => r.id === row.id)) return this.json(route, 409, { code: '23505', message: `duplicate key value violates unique constraint "${table}_pkey"` });
+          rows.push(row);
+          this.leads.after(table, 'insert', sess, row);
+          created.push(row);
+        }
+        return this.respondRows(route, table, created, select);
+      }
+      if (method === 'PATCH') {
+        const patch = req.postDataJSON() as Partial<Row>;
+        const allowedCols: Partial<Record<string, string[]>> = { moderators: ['full_name'], internal_notifications: ['read_at'] };
+        const bad =
+          (allowedCols[table] && Object.keys(patch).some((k) => !allowedCols[table]!.includes(k))) ||
+          (table === 'project_briefs' && Object.keys(patch).some((k) => ['submitted_at', 'approved_at', 'submitted_by', 'approved_by', 'message_id'].includes(k)));
+        if (bad) return this.json(route, 403, { code: '42501', message: `permission denied for table ${table}` });
+        const targets = this.filter(visible, params).filter((r) => this.leads.canWrite(table, 'update', sess, r));
+        for (const r of targets) {
+          Object.assign(r, patch, { updated_at: now() });
+          this.leads.stamp(table, sess, r);
+          this.leads.after(table, 'update', sess, r);
+        }
+        return this.respondRows(route, table, targets, select);
+      }
+      if (method === 'DELETE') {
+        const targets = table === 'internal_notifications' ? this.filter(visible, params) : [];
+        (this.db as Record<string, Row[]>)[table] = rows.filter((r) => !targets.includes(r));
+        return this.respondRows(route, table, targets, select);
+      }
+      return rls();
+    }
 
     if (method === 'POST') {
       const body = req.postDataJSON();
@@ -387,6 +473,14 @@ export class MockSupabase {
           return this.json(route, 409, { code: '23505', message: `duplicate key value violates unique constraint "${table}_slug_key"` });
         }
         const row: Row = { created_at: now(), updated_at: now(), ...item, id: item.id ?? uuid() };
+        if (isLead) {
+          this.leads.stamp(table, sess, row);
+          if (rows.some((r) => r.id === row.id)) return this.json(route, 409, { code: '23505', message: `duplicate key value violates unique constraint "${table}_pkey"` });
+          rows.push(row);
+          this.leads.after(table, 'insert', sess, row);
+          created.push(row);
+          continue;
+        }
         if (table === 'projects' && row.status === 'published' && !row.published_at) row.published_at = now();
         rows.push(row);
         this.log('create', table, row);
@@ -404,11 +498,17 @@ export class MockSupabase {
       for (const r of matched) {
         if (table === 'projects' && patch.status === 'published' && r.status !== 'published') r.published_at = now();
         Object.assign(r, patch, { updated_at: now() });
-        this.log('update', table, r);
+        if (isLead) {
+          this.leads.stamp(table, sess, r);
+          this.leads.after(table, 'update', sess, r);
+        } else this.log('update', table, r);
       }
       return this.respondRows(route, table, matched, select);
     }
     if (method === 'DELETE') {
+      if (table === 'contact_messages' && matched.some((m) => this.db.lead_assignments.some((a) => a.message_id === m.id))) {
+        return this.json(route, 409, { code: '23503', message: 'update or delete on table "contact_messages" violates foreign key constraint on table "lead_assignments"' });
+      }
       if (table === 'categories' && matched.some((c) => this.db.projects.some((p) => p.category_id === c.id))) {
         return this.json(route, 409, { code: '23503', message: 'update or delete on table "categories" violates foreign key constraint' });
       }
