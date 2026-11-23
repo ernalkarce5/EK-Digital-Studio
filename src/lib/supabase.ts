@@ -1,4 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+// Must be evaluated before createClient(): it records invite/recovery link parameters
+// that the auth client removes from the URL while it initialises.
+import './authLinkUrl';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();

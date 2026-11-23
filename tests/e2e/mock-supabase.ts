@@ -28,9 +28,10 @@ const PNG_1x1 = Buffer.from(
 );
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+let jwtSeq = 0;
 function fakeJwt(sub: string, email: string) {
   const exp = Math.floor(Date.now() / 1000) + 3600;
-  return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub, email, role: 'authenticated', exp, aud: 'authenticated' })}.sig`;
+  return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub, email, role: 'authenticated', exp, aud: 'authenticated', session_id: `s${++jwtSeq}` })}.sig`;
 }
 
 const now = () => new Date().toISOString();
@@ -171,6 +172,38 @@ export class MockSupabase {
   private tokens = new Map<string, string | null>([[ANON_KEY, null]]);
   authUsers = new Map<string, string>(ACCOUNTS.map((a) => [a.email, a.id]));
   leads = new LeadsMock(this.db as never, this.authUsers);
+  /** Tokens whose session was revoked (logout). PostgREST still accepts them until expiry, Auth does not. */
+  private revoked = new Set<string>();
+  /** User ids whose password was changed through PUT /auth/v1/user. */
+  passwordChanges: string[] = [];
+
+  private bearer(route: Route) {
+    return route.request().headers()['authorization']?.replace(/^Bearer\s+/i, '') ?? ANON_KEY;
+  }
+
+  /**
+   * The URL fragment Supabase's /verify endpoint appends when redirecting an invite or
+   * recovery link (implicit flow). Each call is a new, single-use session.
+   */
+  linkSession(account: { id: string; email: string }, type: 'invite' | 'recovery' = 'invite') {
+    const token = fakeJwt(account.id, account.email);
+    this.tokens.set(token, account.id);
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    return `#access_token=${token}&expires_at=${exp}&expires_in=3600&refresh_token=refresh-${token.slice(-12)}&token_type=bearer&type=${type}`;
+  }
+
+  /** Server-side sign-out of every session of a user (e.g. "Logout" on another device). */
+  revokeSessions(userId: string) {
+    for (const [t, u] of this.tokens) if (u === userId) this.revoked.add(t);
+  }
+
+  private tokenHashes = new Map<string, { id: string; email: string; type: string }>();
+  /** Query string of the recommended `{{ .TokenHash }}` email template (verified by the page, single use). */
+  linkTokenHash(account: { id: string; email: string }, type: 'invite' | 'recovery' = 'invite') {
+    const hash = `th-${++jwtSeq}-${account.id.slice(0, 8)}`;
+    this.tokenHashes.set(hash, { id: account.id, email: account.email, type });
+    return `?token_hash=${hash}&type=${type}`;
+  }
 
   /** Installed on the browser context so every tab (admin + public) shares one backend. */
   async install(context: BrowserContext) {
@@ -233,17 +266,39 @@ export class MockSupabase {
         refresh_token: `refresh-${account.id}`, user,
       });
     }
-    if (endpoint === 'logout') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+    if (endpoint === 'logout') {
+      // Like Supabase Auth: the default (global) scope revokes every session of that user.
+      const { uid } = this.session(route);
+      if (uid && url.searchParams.get('scope') !== 'local') {
+        for (const [t, u] of this.tokens) if (u === uid) this.revoked.add(t);
+      } else this.revoked.add(this.bearer(route));
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+    }
     if (endpoint === 'recover') return this.json(route, 200, {});
-    if (endpoint === 'user' && route.request().method() === 'PUT') {
-      const acc = ACCOUNTS.find((a) => a.id === this.session(route).uid);
-      return acc ? this.json(route, 200, { id: acc.id, email: acc.email, aud: 'authenticated', role: 'authenticated' }) : this.json(route, 401, { message: 'invalid JWT' });
+    if (endpoint === 'verify' && route.request().method() === 'POST') {
+      const entry = this.tokenHashes.get(body.token_hash);
+      if (!entry || entry.type !== body.type) {
+        return this.json(route, 403, { code: 'otp_expired', error_code: 'otp_expired', msg: 'Email link is invalid or has expired' });
+      }
+      this.tokenHashes.delete(body.token_hash); // single use
+      const token = fakeJwt(entry.id, entry.email);
+      this.tokens.set(token, entry.id);
+      const acc = ACCOUNTS.find((a) => a.id === entry.id)!;
+      return this.json(route, 200, {
+        access_token: token, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: `refresh-${token.slice(-12)}`,
+        user: { id: acc.id, aud: 'authenticated', role: 'authenticated', email: acc.email, app_metadata: {}, user_metadata: { full_name: acc.name }, created_at: now() },
+      });
     }
     if (endpoint === 'user') {
-      const { uid } = this.session(route);
-      const acc = ACCOUNTS.find((a) => a.id === uid) ?? null;
+      // A revoked session answers 403 session_not_found (supabase-js: "Auth session missing!").
+      if (this.revoked.has(this.bearer(route))) {
+        return this.json(route, 403, { code: 'session_not_found', error_code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' });
+      }
+      const acc = ACCOUNTS.find((a) => a.id === this.session(route).uid) ?? null;
       if (!acc) return this.json(route, 401, { message: 'invalid JWT' });
-      return this.json(route, 200, { id: acc.id, email: acc.email, aud: 'authenticated', role: 'authenticated' });
+      if (route.request().method() === 'PUT') this.passwordChanges.push(acc.id);
+      return this.json(route, 200, { id: acc.id, email: acc.email, aud: 'authenticated', role: 'authenticated', user_metadata: { full_name: acc.name } });
     }
     return this.json(route, 404, {});
   }

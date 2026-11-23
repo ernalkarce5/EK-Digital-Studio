@@ -159,7 +159,11 @@ where id = (select id from auth.users where email = 'you@example.com');
 
 Moderators follow up on inquiries the admin assigns to them. They sign in at `/moderator/login` and only ever see their own leads. Add them in **Admin → Moderators → Add moderator**, in one of two ways:
 
-- **Send email invitation** (needs `SUPABASE_SERVICE_ROLE_KEY` on Netlify and working Supabase email, ideally custom SMTP). Supabase emails a link to `/moderator/set-password`, where the moderator chooses a password. The **Invite user** email template (Authentication → Emails) can be reworded; keep `{{ .ConfirmationURL }}`.
+- **Send email invitation** (needs `SUPABASE_SERVICE_ROLE_KEY` on Netlify and working Supabase email, ideally custom SMTP). Supabase emails a link to `/moderator/set-password`, where the moderator chooses a password. The page shows the form only after the link itself has signed the moderator in and the Auth server has confirmed that session. A used or expired link shows "expired" and never falls back to another account already signed in on that browser.
+  - **Recommended email templates** (Authentication → Emails). With the default `{{ .ConfirmationURL }}`, the one-time token is used up as soon as anything opens the link, and email security scanners often do. Linking to the site with the token hash means the token is used only when the page runs:
+    - **Invite user:** `<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite">Set your password</a>`
+    - **Reset password:** `<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery">Choose a new password</a>`
+  - `{{ .RedirectTo }}` is the allow-listed `/moderator/set-password` or `/admin/reset-password` URL the app requests. Both link formats work, so changing the templates is optional.
 - **Link existing account** (no extra setup). Create the user in **Authentication → Users → Add user** (tick *Auto Confirm User*), then add them in the dashboard with the same email. Share the password with them securely; they can change it under Profile & Settings.
 
 The dashboard is the recommended way: it refuses admin accounts and logs the action. As a fallback, the SQL Editor (which runs as the database owner) can link an existing user directly. Replace the name and email:
