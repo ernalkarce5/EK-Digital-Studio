@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
+import { BrandMark } from '@/components/common/Logo';
 
 /** Centered card layout shared by login and password pages. */
 export function AuthShell({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -23,10 +24,11 @@ export function AuthShell({ title, description, children }: { title: string; des
         className="w-full max-w-sm"
       >
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="flex size-11 items-center justify-center rounded-xl border border-line-strong bg-card font-mono text-sm font-medium">
-            E<span className="text-accent">K</span>
+          <span className="relative grid place-items-center">
+            <span aria-hidden className="absolute size-20 rounded-full bg-accent/20 blur-2xl" />
+            <BrandMark size="lg" className="relative" />
           </span>
-          <h1 className="mt-6 text-2xl font-medium tracking-tight">{title}</h1>
+          <h1 className="mt-5 text-2xl font-medium tracking-tight">{title}</h1>
           {description && <p className="mt-2 text-sm text-muted">{description}</p>}
         </div>
         <div className="rounded-2xl border border-line-strong bg-card p-6 shadow-2xl shadow-black/20 sm:p-7">{children}</div>

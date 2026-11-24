@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { getPublicProfile, getSiteSettings } from '@/services/site';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { mediaUrl } from '@/lib/storage';
+import { cacheLogo } from '@/lib/brand';
 import { publicErrorMessage } from '@/lib/errors';
 import type { PublicProfile, SiteSettings } from '@/types/database';
 
@@ -72,6 +73,11 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Remember the logo URL so the next visit (and the startup splash) can show it immediately.
+  useEffect(() => {
+    if (settingsLoaded) cacheLogo(mediaUrl(settings.logo_path));
+  }, [settingsLoaded, settings.logo_path]);
 
   // Apply a custom favicon from settings.
   useEffect(() => {

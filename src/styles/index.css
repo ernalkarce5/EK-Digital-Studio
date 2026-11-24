@@ -244,3 +244,89 @@
 .prose-ek p + p {
   margin-top: 1rem;
 }
+
+/* ── Brand: logo and loaders ───────────────────────────────────────
+   Shared with the static splash in index.html (which repeats these few rules inline,
+   because it is shown before this stylesheet is loaded in development).
+   Only transform and opacity are animated, so mobile GPUs composite them cheaply. */
+[data-theme='light'] .brand-logo {
+  /* The glossy white parts of the logo need a hint of depth on light backgrounds. */
+  filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / 0.28));
+}
+
+@keyframes ek-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes ek-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes ek-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.04);
+  }
+}
+@keyframes ek-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@keyframes ek-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ek-loader-mark {
+  animation:
+    ek-mark-in 0.7s var(--ease-out-expo) both,
+    ek-breathe 2.6s ease-in-out 0.7s infinite;
+  will-change: transform, opacity;
+}
+.ek-loader-glow {
+  background: radial-gradient(closest-side, var(--accent) 0%, transparent 100%);
+  filter: blur(18px);
+  animation: ek-glow 2.6s ease-in-out infinite;
+}
+.ek-loader-bar {
+  animation: ek-sweep 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.ek-loader-label {
+  animation: ek-fade-in 0.6s ease-out 0.5s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ek-loader-mark,
+  .ek-loader-glow,
+  .ek-loader-label {
+    animation: none;
+  }
+  .ek-loader-bar {
+    animation: none;
+    transform: translateX(75%);
+  }
+}

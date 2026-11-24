@@ -13,4 +13,16 @@
   } catch (e) {
     /* storage unavailable: default theme */
   }
+  // Startup splash: show the uploaded logo cached from the last visit (see src/lib/brand.ts).
+  try {
+    var u = localStorage.getItem('ek-logo-url');
+    if (u && /^https?:\/\/[^"'\\()\s<>]+$/.test(u)) {
+      var s = document.createElement('style');
+      s.textContent = '#ek-splash .ek-s-logo{background-image:url("' + u + '")}';
+      document.head.appendChild(s);
+      document.documentElement.classList.add('ek-has-logo');
+    }
+  } catch (e) {
+    /* storage unavailable: monogram splash */
+  }
 })();

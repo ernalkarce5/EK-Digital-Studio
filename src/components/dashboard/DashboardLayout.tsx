@@ -6,7 +6,8 @@ import { AREA_PATHS, useAuth, type AuthArea } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSite } from '@/contexts/SiteContext';
-import { LoadingBlock } from '@/components/common/Feedback';
+import { BrandLoader } from '@/components/common/BrandLoader';
+import { BrandMark } from '@/components/common/Logo';
 import { countUnreadNotifications } from '@/services/notifications';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { toErrorMessage } from '@/lib/errors';
@@ -85,10 +86,8 @@ function SidebarContent({
   const { theme, toggleTheme } = useTheme();
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-16 items-center gap-2.5 border-b border-line px-5">
-        <span className="flex size-8 items-center justify-center rounded-lg border border-line-strong bg-card font-mono text-[12px] font-medium">
-          E<span className="text-accent">K</span>
-        </span>
+      <div className="flex h-16 items-center gap-2 border-b border-line px-5">
+        <BrandMark size="sm" className="-ml-1.5" />
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-sm font-medium">{settings.studio_name}</p>
           <p className="font-mono text-[10px] uppercase tracking-wider text-subtle">{label}</p>
@@ -205,7 +204,7 @@ export function DashboardLayout({
   useEffect(() => setOpen(false), [location.pathname]);
 
   if (!isSupabaseConfigured) return <Navigate to={paths.login} replace />;
-  if (loading) return <LoadingBlock className="min-h-dvh" label="Checking session…" />;
+  if (loading) return <BrandLoader className="min-h-dvh" label="Checking session…" />;
   if (!session) return <Navigate to={paths.login} replace state={{ from: location.pathname + location.search }} />;
   if (role !== area) {
     // Signed in with the other role: send them to their own dashboard.
@@ -232,8 +231,9 @@ export function DashboardLayout({
 
       {/* Mobile top bar */}
       <div className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/90 px-4 backdrop-blur lg:hidden">
-        <Link to={paths.home} className="text-sm font-medium">
-          {label}
+        <Link to={paths.home} className="-ml-1.5 flex min-w-0 items-center gap-1.5 text-sm font-medium">
+          <BrandMark size="sm" />
+          <span className="truncate">{label}</span>
         </Link>
         <div className="flex items-center gap-1">
           <NotificationBell to={notificationsTo} unread={unread} />

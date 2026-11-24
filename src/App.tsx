@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { MotionConfig } from 'framer-motion';
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -6,7 +6,8 @@ import { ToastProvider } from '@/contexts/ToastContext';
 import { SiteProvider } from '@/contexts/SiteContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { PublicLayout } from '@/components/layout/PublicLayout';
-import { LoadingBlock } from '@/components/common/Feedback';
+import { BrandLoader } from '@/components/common/BrandLoader';
+import { hideSplash } from '@/lib/brand';
 import HomePage from '@/pages/Home/HomePage';
 import NotFoundPage from '@/pages/NotFound/NotFoundPage';
 
@@ -50,9 +51,10 @@ const ModeratorBriefs = lazy(() => import('@/pages/Moderator/BriefsPage'));
 const ModeratorArchive = lazy(() => import('@/pages/Moderator/ArchivePage'));
 const ModeratorProfile = lazy(() => import('@/pages/Moderator/ProfilePage'));
 
-const page = (node: ReactNode) => (
-  <Suspense fallback={<LoadingBlock className="min-h-[70dvh]" label="Loading…" />}>{node}</Suspense>
-);
+/** Page inside a layout (navbar or dashboard stays visible): compact branded loader. */
+const page = (node: ReactNode) => <Suspense fallback={<BrandLoader size="md" />}>{node}</Suspense>;
+/** Top-level screen (sign-in pages, dashboard shells): full-screen branded loader. */
+const screen = (node: ReactNode) => <Suspense fallback={<BrandLoader className="min-h-dvh" />}>{node}</Suspense>;
 
 const router = createBrowserRouter([
   {
@@ -69,12 +71,12 @@ const router = createBrowserRouter([
       { path: '*', element: <NotFoundPage /> },
     ],
   },
-  { path: 'admin/login', element: page(<AdminLogin />) },
-  { path: 'admin/forgot-password', element: page(<AdminForgotPassword />) },
-  { path: 'admin/reset-password', element: page(<AdminResetPassword />) },
+  { path: 'admin/login', element: screen(<AdminLogin />) },
+  { path: 'admin/forgot-password', element: screen(<AdminForgotPassword />) },
+  { path: 'admin/reset-password', element: screen(<AdminResetPassword />) },
   {
     path: 'admin',
-    element: page(<AdminLayout />),
+    element: screen(<AdminLayout />),
     children: [
       { index: true, element: page(<AdminDashboard />) },
       { path: 'projects', element: page(<AdminProjects />) },
@@ -95,12 +97,12 @@ const router = createBrowserRouter([
       { path: 'notifications', element: page(<NotificationsPage area="admin" />) },
     ],
   },
-  { path: 'moderator/login', element: page(<AdminLogin area="moderator" />) },
-  { path: 'moderator/forgot-password', element: page(<AdminForgotPassword area="moderator" />) },
-  { path: 'moderator/set-password', element: page(<AdminResetPassword area="moderator" />) },
+  { path: 'moderator/login', element: screen(<AdminLogin area="moderator" />) },
+  { path: 'moderator/forgot-password', element: screen(<AdminForgotPassword area="moderator" />) },
+  { path: 'moderator/set-password', element: screen(<AdminResetPassword area="moderator" />) },
   {
     path: 'moderator',
-    element: page(<ModeratorLayout />),
+    element: screen(<ModeratorLayout />),
     children: [
       { index: true, element: page(<ModeratorOverview />) },
       { path: 'leads', element: page(<ModeratorLeads />) },
@@ -115,6 +117,8 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
+  // React has rendered: fade out the static splash from index.html.
+  useEffect(() => hideSplash(), []);
   return (
     <MotionConfig reducedMotion="user">
       <ThemeProvider>
