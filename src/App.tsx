@@ -39,6 +39,7 @@ const AdminAssignments = lazy(() => import('@/pages/Admin/AssignmentsPage'));
 const AdminBriefs = lazy(() => import('@/pages/Admin/BriefsReviewPage'));
 const AdminLeadActivity = lazy(() => import('@/pages/Admin/LeadActivityPage'));
 const AdminLead = lazy(() => import('@/pages/Admin/AdminLeadPage'));
+const AdminAnalytics = lazy(() => import('@/pages/Admin/AnalyticsPage'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications/NotificationsPage'));
 
 // Moderator bundle: loaded only when visiting /moderator.
@@ -95,6 +96,7 @@ const router = createBrowserRouter([
       { path: 'activity', element: page(<AdminLeadActivity />) },
       { path: 'leads/:messageId', element: page(<AdminLead />) },
       { path: 'notifications', element: page(<NotificationsPage area="admin" />) },
+      { path: 'analytics', element: page(<AdminAnalytics />) },
     ],
   },
   { path: 'moderator/login', element: screen(<AdminLogin area="moderator" />) },

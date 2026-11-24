@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { trackPageView } from '@/lib/analytics';
+import { useAuth } from '@/contexts/AuthContext';
 
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
@@ -20,6 +22,18 @@ function ScrollToTop() {
   return null;
 }
 
+/** Counts public page views (also client-side navigations). Staff browsing the site are not counted. */
+function PageViewTracker() {
+  const { pathname } = useLocation();
+  const { loading, role } = useAuth();
+  useEffect(() => {
+    if (loading || role) return;
+    const id = window.setTimeout(() => trackPageView(pathname), 0);
+    return () => window.clearTimeout(id);
+  }, [pathname, loading, role]);
+  return null;
+}
+
 export function PublicLayout() {
   const { pathname } = useLocation();
 
@@ -32,6 +46,7 @@ export function PublicLayout() {
         Skip to content
       </a>
       <ScrollToTop />
+      <PageViewTracker />
       {!isSupabaseConfigured && import.meta.env.DEV && (
         <div className="fixed bottom-4 left-4 z-[70] max-w-xs rounded-lg border border-warning/40 bg-card px-3 py-2 text-xs text-warning">
           Supabase is not configured. Copy <code>.env.example</code> to <code>.env</code>.

@@ -9,6 +9,7 @@
  */
 import type { BrowserContext, Route } from '@playwright/test';
 import { LEAD_TABLES, LeadsMock, type Role, type Session } from './mock-leads';
+import { AnalyticsMock, type TrackCall } from './mock-analytics';
 
 export const MOCK_URL = 'http://mock-supabase.test';
 export const ANON_KEY = 'e2e-anon-key';
@@ -172,6 +173,7 @@ export class MockSupabase {
   private tokens = new Map<string, string | null>([[ANON_KEY, null]]);
   authUsers = new Map<string, string>(ACCOUNTS.map((a) => [a.email, a.id]));
   leads = new LeadsMock(this.db as never, this.authUsers);
+  analytics = new AnalyticsMock();
   /** Tokens whose session was revoked (logout). PostgREST still accepts them until expiry, Auth does not. */
   private revoked = new Set<string>();
   /** User ids whose password was changed through PUT /auth/v1/user. */
@@ -310,6 +312,23 @@ export class MockSupabase {
     this.rpcCalls.push({ fn, body });
     const lead = this.leads.rpc(fn, body, this.session(route));
     if (lead) return this.json(route, lead.status, lead.body);
+    if (fn === 'track_page_view') {
+      // Like the database: staff sessions are not counted. (The public site calls this without a session.)
+      if (role !== 'admin' && role !== 'moderator') {
+        const published = this.db.projects.filter((p) => p.status === 'published').map((p) => String(p.slug));
+        this.analytics.track(body as unknown as TrackCall, published);
+      }
+      return this.json(route, 200, null);
+    }
+    if (fn === 'analytics_verify_ip_source') {
+      if (role !== 'admin') return this.json(route, role === 'anon' ? 401 : 403, { code: '42501', message: 'Only administrators can do this.' });
+      const r = this.analytics.verify(String(body.p_marker), route.request().headers());
+      return r ? this.json(route, 200, r) : this.json(route, 400, { code: '22023', message: 'The verification request did not include the test headers.' });
+    }
+    if (fn === 'analytics_summary') {
+      if (role !== 'admin') return this.json(route, role === 'anon' ? 401 : 403, { code: '42501', message: 'Only administrators can view analytics.' });
+      return this.json(route, 200, this.analytics.summary(body as { p_from: string; p_to: string; p_grain: string }));
+    }
     if (fn === 'is_admin') return this.json(route, 200, role === 'admin');
     if (fn === 'submit_contact_message') {
       if (body.p_website || (typeof body.p_elapsed_ms === 'number' && body.p_elapsed_ms < 2000)) return this.json(route, 200, { ok: true });

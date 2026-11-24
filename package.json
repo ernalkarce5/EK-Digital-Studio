@@ -8,7 +8,7 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/generate-sitemap.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:db": "node tests/db/rls.test.mjs && node tests/db/leads.test.mjs",
+    "test:db": "node tests/db/rls.test.mjs && node tests/db/leads.test.mjs && node tests/db/analytics.test.mjs",
     "test:e2e": "playwright test",
     "test:functions": "node tests/functions/invite-moderator.test.mjs"
   },

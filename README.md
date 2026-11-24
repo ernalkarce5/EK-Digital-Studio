@@ -89,10 +89,10 @@ The function reads the project URL and anon key from `VITE_SUPABASE_URL` / `VITE
 
 ### 1. Create the project and run the migrations
 
-Create a project at [supabase.com](https://supabase.com). Then apply the six files in `supabase/migrations/` **in order**, using either method:
+Create a project at [supabase.com](https://supabase.com). Then apply the seven files in `supabase/migrations/` **in order**, using either method:
 
-- **SQL Editor:** paste and run each file: `…01_schema.sql`, `…02_security.sql`, `…03_storage.sql`, `…04_seed.sql`, `…22000001_contact_phone_and_settings_consolidation.sql`, `…23000001_moderators_and_lead_management.sql`.
-  - An existing production database only needs the **last** file. It adds new tables, functions and one extra read policy on `contact_messages`; it does not change or drop existing data or policies.
+- **SQL Editor:** paste and run each file: `…01_schema.sql`, `…02_security.sql`, `…03_storage.sql`, `…04_seed.sql`, `…22000001_contact_phone_and_settings_consolidation.sql`, `…23000001_moderators_and_lead_management.sql`, `…24000001_website_analytics.sql`.
+  - An existing production database only needs the files it has not run yet. `…23000001` adds the moderator tables, functions and one extra read policy on `contact_messages`; `…24000001` adds the analytics tables and functions. Neither changes or drops existing data or policies.
 - **Supabase CLI:** `supabase link --project-ref <ref>` then `supabase db push`.
 
 This creates:
@@ -115,6 +115,8 @@ This creates:
 | `lead_notes` | Notes shared between admin and moderator, admin-only notes, help requests |
 | `internal_notifications` | In-dashboard notifications with read/unread state |
 | `lead_activity_logs` | Audit log of every lead action (written only by database functions and triggers) |
+| `page_views` | Website analytics: one row per counted public page view (page, time, source, device, anonymous daily visitor hash). Written only by `track_page_view()`, readable only by admins |
+| `analytics_salts` | The current day's random salt for the visitor hash (older salts are deleted; no client access) |
 
 The seed adds the six categories, the seven service descriptions and default site settings. It adds **no** projects or testimonials; those must be real and are added from the dashboard.
 
@@ -200,7 +202,11 @@ The storage migration creates a public `media` bucket (5 MB limit; JPEG/PNG/WebP
 - **Inquiries with lead history cannot be deleted** (`on delete restrict`), so the original message is always preserved. Archive them instead.
 - **The service-role key** lives only in the Netlify function, which verifies the caller is an admin (with the caller's own token) before using it.
 
-`npm run test:db` verifies these rules against real Postgres (42 site checks + 45 moderator/lead checks).
+- **Website analytics** (Admin → Website Analytics) is cookieless and uses pseudonymous daily visitor codes. The public site calls `track_page_view()` on every route change (also in-app navigation). The function ignores bots, signed-in staff, unknown or draft pages, repeats within 30 seconds, and floods (fixed-window counters per network, per visitor and globally; keys are salted hashes). It stores no IP address, user agent, URL query or personal data. Visitors and moderators cannot read anything; only admins can, through `analytics_summary()`. Do-Not-Track, Global Privacy Control and the "Don't count my visits" control on the Privacy Policy page are honoured (no request is sent). Counting starts when the migration is applied; nothing is back-filled.
+  - **Trusted IP source.** No IP header is trusted by default. After applying the migration, open Admin → Website Analytics → **Verify IP source**: it sends a fake test IP in every candidate header and stores only a header the infrastructure overwrites. Until then, unique visitors are approximate and per-network limits are off. Re-run it after infrastructure changes.
+  - **Retention.** Page views are deleted after 13 months; daily salts after their day; rate-limit counters after 2 hours. If `pg_cron` is available the migration schedules a nightly job (`ek-analytics-cleanup`); cleanup also runs when the analytics page is opened and on the first visit of each day. Deleted data can remain in Supabase backups until they expire.
+
+`npm run test:db` verifies these rules against real Postgres (42 site checks + 45 moderator/lead checks + 25 analytics checks).
 
 ## Deployment (Netlify + GitHub)
 
@@ -219,7 +225,7 @@ The storage migration creates a public `media` bucket (5 MB limit; JPEG/PNG/WebP
 
 ## Privacy, fonts and share images
 
-- **Privacy Policy** (`/privacy`, `src/pages/Privacy/PrivacyPage.tsx`) describes what the site actually does: contact-form fields, phone only when requested, hashed IP and user agent for spam protection, no analytics or tracking cookies, and Supabase/Netlify as processors. The controller name, email and location come from Site Settings. **Have it reviewed for your jurisdiction**, confirm the Supabase region you chose, and update `PRIVACY_LAST_UPDATED` whenever the text changes.
+- **Privacy Policy** (`/privacy`, `src/pages/Privacy/PrivacyPage.tsx`) describes what the site actually does: contact-form fields, phone only when requested, hashed IP and user agent for spam protection, the cookieless visit statistics, no tracking cookies, and Supabase/Netlify as processors. The controller name, email and location come from Site Settings. **Have it reviewed for your jurisdiction**, confirm the Supabase region you chose, and update `PRIVACY_LAST_UPDATED` whenever the text changes.
 - **Fonts** are self-hosted in `public/fonts` (SIL Open Font License; see `public/fonts/LICENSE.txt`). No request goes to Google.
 - **Default share image:** `public/og-image.png` (1200×630), used when no image is set in Site Settings. **Apple touch icon:** `public/apple-touch-icon.png`.
 

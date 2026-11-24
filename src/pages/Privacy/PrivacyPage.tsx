@@ -3,9 +3,10 @@ import { Link } from 'react-router';
 import { Seo } from '@/components/common/Seo';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useSite } from '@/contexts/SiteContext';
+import { AnalyticsOptOut } from '@/components/common/AnalyticsOptOut';
 
 /** Update this date whenever the policy text changes. */
-export const PRIVACY_LAST_UPDATED = '22 November 2026';
+export const PRIVACY_LAST_UPDATED = '24 November 2026';
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -24,6 +25,7 @@ const TOC = [
   ['controller', 'Who is responsible'],
   ['contact-form', 'Contact form'],
   ['browsing', 'Visiting the website'],
+  ['statistics', 'Visit statistics'],
   ['storage', 'Cookies and local storage'],
   ['processors', 'Service providers'],
   ['retention', 'How long data is kept'],
@@ -111,14 +113,48 @@ export default function PrivacyPage() {
 
           <Section id="browsing" title="Visiting the website">
             <p>
-              This website does not use analytics, advertising or tracking tools, and does not build visitor profiles.
+              This website does not use advertising or third-party tracking tools, and does not build visitor profiles.
               Fonts are served from this website itself, not from third-party font services.
             </p>
             <p>
-              As with any website, the hosting provider automatically processes technical data needed to deliver pages
-              securely, such as your IP address, the time of the request and the page requested. These are standard
-              server logs under the hosting provider&apos;s control.
+              As with any website, the providers below automatically process technical data needed to deliver pages
+              and answer requests securely, such as your IP address, browser details, the time of the request and the
+              page or data requested. These are standard hosting and API logs, kept by the providers under their own
+              retention rules.
             </p>
+          </Section>
+
+          <Section id="statistics" title="Visit statistics">
+            <p>
+              To understand which pages are useful, the website counts page views with its own statistics, without
+              cookies and without third-party analytics tools.
+            </p>
+            <p>
+              <strong>What is stored for each counted page view:</strong> the page, the time, the kind of device (mobile,
+              tablet or desktop, estimated from the browser), how the visit started (for example a search engine, a social
+              network, the domain of a linking website, or a direct visit) and a <strong>pseudonymous visitor code</strong>.
+            </p>
+            <p>
+              <strong>How the code works:</strong> when you open a page, your browser sends the page address, the referring
+              domain and the device type to the database. The database calculates the code from your IP address and browser
+              details combined with a random value that changes every day. Your IP address and browser details are not stored
+              with the statistics. Because the random value is replaced daily and the old one deleted, codes from different
+              days are not intended to be linkable to each other or to you. During the day the code is still pseudonymous
+              personal data: someone with access to the database and that day&apos;s random value could in principle test
+              whether a known IP address and browser produced it. Copies of the random value can remain in the database
+              provider&apos;s backups until those expire.
+            </p>
+            <p>
+              <strong>Not counted:</strong> visits when your browser sends a Do-Not-Track or Global Privacy Control signal,
+              visits after you choose &ldquo;Don&apos;t count my visits&rdquo; below, automated bots, and signed-in staff.
+            </p>
+            <p>
+              The statistics are used only in aggregate (for example &ldquo;page views per day&rdquo;), are not combined
+              with other data or shared for marketing, and are kept for 13 months. The legal basis relied on is a legitimate
+              interest in understanding and improving the website (GDPR Art. 6(1)(f)). You have the right to object at any
+              time, with the control below or by contacting {contactLine}.
+            </p>
+            <AnalyticsOptOut />
           </Section>
 
           <Section id="storage" title="Cookies and local storage">
@@ -129,7 +165,17 @@ export default function PrivacyPage() {
                 device.
               </li>
               <li>
-                <strong>Administrator sign-in session</strong>, only for the site owner when signed in to the admin area.
+                <strong>Logo address</strong>, so the loading screen can show the site logo straight away on your next
+                visit. It contains no information about you and never leaves your device.
+              </li>
+              <li>
+                <strong>&ldquo;Don&apos;t count my visits&rdquo; choice</strong>, only if you use that control, so your
+                objection to visit statistics is remembered on this device. It is a single on/off value and never leaves
+                your device. Clearing your browser data removes it, and visits are then counted again.
+              </li>
+              <li>
+                <strong>Sign-in session</strong>, only for the site owner and team members when signed in to the admin or
+                team area.
               </li>
             </ul>
           </Section>
@@ -138,11 +184,12 @@ export default function PrivacyPage() {
             <p>The website relies on these providers, which process data on its behalf:</p>
             <ul>
               <li>
-                <strong>Supabase</strong>: database, file storage and administrator authentication. Inquiries are stored
-                here, in the data-centre region selected for this website.
+                <strong>Supabase</strong>: database, file storage and sign-in. Inquiries and visit statistics are stored
+                here, in the data-centre region selected for this website. Supabase also keeps request logs (including IP
+                address and browser details) and backups under its own retention rules.
               </li>
               <li>
-                <strong>Netlify</strong>: hosting and delivery of the website.
+                <strong>Netlify</strong>: hosting and delivery of the website, including standard server logs.
               </li>
             </ul>
             <p>
@@ -157,6 +204,10 @@ export default function PrivacyPage() {
               that project and any legal record-keeping obligations. Inquiries that do not lead to a project are deleted
               when no longer needed. You can ask for your data to be deleted at any time.
             </p>
+            <p>
+              Visit statistics are deleted automatically after 13 months. The daily random value used for visitor codes is
+              deleted after its day. Deleted data can remain in the database provider&apos;s backups until those expire.
+            </p>
           </Section>
 
           <Section id="rights" title="Your rights">
@@ -168,7 +219,15 @@ export default function PrivacyPage() {
               <li>receive it in a portable format;</li>
               <li>lodge a complaint with your local data protection authority.</li>
             </ul>
-            <p>To make a request, contact {contactLine}. You will receive a reply within one month.</p>
+            <p>
+              To make a request, contact {contactLine}. You will receive a reply within one month. To object to visit
+              statistics you can also use the &ldquo;Don&apos;t count my visits&rdquo; control in the{' '}
+              <a href="#statistics" className="text-fg underline underline-offset-2">
+                Visit statistics
+              </a>{' '}
+              section. Because visitor codes cannot be linked to a person after their day ends, older statistics usually
+              cannot be attributed to you.
+            </p>
           </Section>
 
           <Section id="changes" title="Changes to this policy">

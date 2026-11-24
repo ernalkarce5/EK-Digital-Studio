@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router';
 import {
   Activity,
+  ChartLine,
   ClipboardCheck,
   FolderKanban,
   Images,
@@ -29,6 +30,7 @@ export default function AdminLayout() {
     {
       items: [
         { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
+        { to: '/admin/analytics', label: 'Website Analytics', icon: ChartLine },
         { to: '/admin/projects', label: 'Projects', icon: FolderKanban },
         { to: '/admin/categories', label: 'Categories', icon: Tags },
         { to: '/admin/services', label: 'Services', icon: Shapes },
