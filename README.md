@@ -89,10 +89,10 @@ The function reads the project URL and anon key from `VITE_SUPABASE_URL` / `VITE
 
 ### 1. Create the project and run the migrations
 
-Create a project at [supabase.com](https://supabase.com). Then apply the seven files in `supabase/migrations/` **in order**, using either method:
+Create a project at [supabase.com](https://supabase.com). Then apply the eight files in `supabase/migrations/` **in order**, using either method:
 
-- **SQL Editor:** paste and run each file: `…01_schema.sql`, `…02_security.sql`, `…03_storage.sql`, `…04_seed.sql`, `…22000001_contact_phone_and_settings_consolidation.sql`, `…23000001_moderators_and_lead_management.sql`, `…24000001_website_analytics.sql`.
-  - An existing production database only needs the files it has not run yet. `…23000001` adds the moderator tables, functions and one extra read policy on `contact_messages`; `…24000001` adds the analytics tables and functions. Neither changes or drops existing data or policies.
+- **SQL Editor:** paste and run each file: `…01_schema.sql`, `…02_security.sql`, `…03_storage.sql`, `…04_seed.sql`, `…22000001_contact_phone_and_settings_consolidation.sql`, `…23000001_moderators_and_lead_management.sql`, `…24000001_website_analytics.sql`, `…28000001_client_questionnaires.sql`.
+  - An existing production database only needs the files it has not run yet. `…23000001` adds the moderator tables, functions and one extra read policy on `contact_messages`; `…24000001` adds the analytics tables and functions; `…28000001` adds client questionnaires (it requires **pgcrypto** in the `extensions` schema, the Supabase default, and aborts without changing anything if it is missing). None of them changes or drops existing data or policies.
 - **Supabase CLI:** `supabase link --project-ref <ref>` then `supabase db push`.
 
 This creates:
@@ -117,6 +117,7 @@ This creates:
 | `lead_activity_logs` | Audit log of every lead action (written only by database functions and triggers) |
 | `page_views` | Website analytics: one row per counted public page view (page, time, source, device, anonymous daily visitor hash). Written only by `track_page_view()`, readable only by admins |
 | `analytics_salts` | The current day's random salt for the visitor hash (older salts are deleted; no client access) |
+| `client_questionnaires` | One project questionnaire per lead: status, link expiry, sending details, draft and submitted answers. Only the sha256 of the client's link token is stored. Read-only for the lead's current moderator and admins (RLS); all changes go through functions |
 
 The seed adds the six categories, the seven service descriptions and default site settings. It adds **no** projects or testimonials; those must be real and are added from the dashboard.
 
@@ -179,7 +180,25 @@ Moderators can never grant themselves admin rights or reactivate themselves: `pr
 
 **Workflow:** Messages → *Assign to Moderator* → the moderator records communication, client details and a project brief → *Submit to Admin* → the admin approves or requests changes (the lead goes back to the moderator) → the moderator archives it. The admin can transfer or retrieve a lead or override its status at any time, under **Assignments** or on the lead page. Every step is written to the activity log and notifies the other side in the dashboard (bell icon; no emails are sent).
 
-### 5. Storage
+### 5. Client project questionnaires
+
+Moderators can send a client a personal questionnaire link from **Moderator → Assigned Leads → lead → Questionnaire**. Clients need no account. There is no admin interface for it; admins keep the existing Project Brief review workflow.
+
+**Workflow**
+1. **Generate questionnaire link.** It is shown **once** (only its hash is stored) and works for 30 days. *Generate replacement link* issues a new link and stops the previous one immediately; the client's saved draft and the status are kept. *Disable link* stops it at any time.
+2. **Send it yourself** by email or Instagram. A prepared message (and an email draft) is provided; nothing is sent automatically. *Mark as sent* records it and adds an entry to the communication history.
+3. The client opens `/questionnaire#t=…`, a standalone page without site navigation. Answers save automatically, so they can continue later on another device. Required: website type and a description of at least 20 characters. After a review step they submit; submitted answers can't be changed.
+4. The moderator is notified, reviews the answers, can **Apply to Project Brief** (fills the existing brief as unsaved changes, asking before replacing text already there) and then **Mark as Reviewed**. Neither action changes the lead status.
+
+**Statuses:** Not sent → Sent to client → In progress (first saved answer) → Submitted → Reviewed (explicit action only).
+
+**Security:** the token is in the URL fragment, so it never reaches Netlify, logs or the Referer header; the page removes it from the address bar and sends it only in request bodies to `questionnaire_open`, `questionnaire_save_draft` and `questionnaire_submit`. Invalid, expired, disabled and no-longer-active links all show the same neutral message. Moderators manage only leads currently assigned to them. The page is `noindex`, uncached and not counted in the website analytics.
+
+**Retention:** unsubmitted drafts are deleted 30 days after the link expired or was disabled (`questionnaire_cleanup`, scheduled daily as `ek-questionnaire-cleanup` when pg_cron is available). Submitted answers are kept with the inquiry and deleted with it. Inquiries themselves have **no automatic deletion**.
+
+**Environment:** no new variables. The links use `VITE_SITE_URL` (or the current origin).
+
+### 6. Storage
 
 The storage migration creates a public `media` bucket (5 MB limit; JPEG/PNG/WebP/AVIF/GIF/ICO). Anyone can read images by URL. Only admins can list, upload or delete. An image referenced by a project, testimonial, profile or site settings **cannot be deleted**; this is enforced by a storage policy, not only in the UI. Large JPEG/PNG uploads are resized (max 2400 px) and converted to WebP in the browser before upload.
 
@@ -206,7 +225,7 @@ The storage migration creates a public `media` bucket (5 MB limit; JPEG/PNG/WebP
   - **Trusted IP source.** No IP header is trusted by default. After applying the migration, open Admin → Website Analytics → **Verify IP source**: it sends a fake test IP in every candidate header and stores only a header the infrastructure overwrites. Until then, unique visitors are approximate and per-network limits are off. Re-run it after infrastructure changes.
   - **Retention.** Page views are deleted after 13 months; daily salts after their day; rate-limit counters after 2 hours. If `pg_cron` is available the migration schedules a nightly job (`ek-analytics-cleanup`); cleanup also runs when the analytics page is opened and on the first visit of each day. Deleted data can remain in Supabase backups until they expire.
 
-`npm run test:db` verifies these rules against real Postgres (42 site checks + 45 moderator/lead checks + 25 analytics checks).
+`npm run test:db` verifies these rules against real Postgres (42 site checks + 45 moderator/lead checks + 25 analytics checks + 32 questionnaire checks).
 
 ## Deployment (Netlify + GitHub)
 

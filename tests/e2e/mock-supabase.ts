@@ -136,6 +136,7 @@ export function seedData() {
     lead_notes: [] as Row[],
     internal_notifications: [] as Row[],
     lead_activity_logs: [] as Row[],
+    client_questionnaires: [] as Row[],
     testimonials: [] as Row[],
     admin_activity_logs: [] as Row[],
   };

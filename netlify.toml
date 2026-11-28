@@ -54,3 +54,12 @@
   for = "/moderator/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
+
+# Client questionnaire: the secret token is in the URL fragment (never sent to the server);
+# these headers keep the page out of search engines, caches and Referer headers.
+[[headers]]
+  for = "/questionnaire"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+    Cache-Control = "no-store"

@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Save } from 'lucide-react';
+import { FileInput, Save } from 'lucide-react';
 import { Panel } from '@/components/admin/AdminUI';
 import { Button } from '@/components/common/Button';
 import { FormField, Input, Select, Textarea } from '@/components/forms/Field';
@@ -9,6 +9,7 @@ import { saveBrief, notifyLeadsChanged } from '@/services/leads';
 import { BRIEF_PRIORITIES, BRIEF_PROJECT_TYPES } from '@/lib/leads';
 import { toErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
+import { BRIEF_FIELD_LABELS, type BriefPrefill } from '@/lib/questionnaire';
 import type { ProjectBrief, ProjectBriefContent } from '@/types/database';
 
 type TextKey = Exclude<keyof ProjectBriefContent, 'project_type' | 'deadline' | 'priority' | 'budget'>;
@@ -91,32 +92,64 @@ const toContent = (v: FormValues): ProjectBriefContent => {
   };
 };
 
+/** Questionnaire answers to put into the form as UNSAVED changes ("empty" = only empty fields). */
+export interface BriefPrefillRequest {
+  values: BriefPrefill;
+  mode: 'empty' | 'all';
+  nonce: number;
+}
+
 export function BriefForm({
   messageId,
   brief,
   editable,
   onSaved,
+  prefill,
+  onPrefillApplied,
 }: {
   messageId: string;
   brief: ProjectBrief | null;
   editable: boolean;
   onSaved: (b: ProjectBrief) => void;
+  prefill?: BriefPrefillRequest | null;
+  onPrefillApplied?: () => void;
 }) {
   const toast = useToast();
   const {
     register,
     handleSubmit,
     reset,
+    getValues,
+    setValue,
     formState: { isSubmitting, isDirty },
   } = useForm<FormValues>({ defaultValues: toForm(brief) });
+  const [appliedFields, setAppliedFields] = useState<Array<keyof BriefPrefill>>([]);
 
   // Sync when the stored brief changes, without discarding fields the user is editing.
   useEffect(() => reset(toForm(brief), { keepDirtyValues: true }), [brief?.updated_at, reset]);
+
+  // Apply questionnaire answers once per request; nothing is saved until the moderator clicks Save.
+  useEffect(() => {
+    if (!prefill || !editable) return;
+    const current = getValues() as unknown as Record<string, string>;
+    const changed: Array<keyof BriefPrefill> = [];
+    for (const [key, value] of Object.entries(prefill.values) as Array<[keyof BriefPrefill, string]>) {
+      if (value == null || value === '') continue;
+      const existing = String(current[key] ?? '').trim();
+      if (existing === String(value).trim()) continue;
+      if (prefill.mode === 'empty' && existing) continue;
+      setValue(key as keyof FormValues, value as never, { shouldDirty: true });
+      changed.push(key);
+    }
+    setAppliedFields(changed);
+    onPrefillApplied?.();
+  }, [prefill?.nonce]);
 
   const onSubmit = handleSubmit(async (values) => {
     try {
       const saved = await saveBrief(messageId, toContent(values));
       reset(toForm(saved));
+      setAppliedFields([]);
       onSaved(saved);
       notifyLeadsChanged();
       toast.success('Project brief saved.');
@@ -133,6 +166,15 @@ export function BriefForm({
         Fill in what you know. Drafts can be saved at any time, and no field is required.
         {brief?.updated_at && <span className="text-subtle"> Last saved {formatDate(brief.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}.</span>}
       </p>
+      {appliedFields.length > 0 && (
+        <div role="status" className="flex gap-3 rounded-xl border border-accent/35 bg-accent-soft p-4 text-sm">
+          <FileInput className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+          <div>
+            <p className="font-medium">Questionnaire answers filled in {appliedFields.length} field{appliedFields.length === 1 ? '' : 's'} — not saved yet.</p>
+            <p className="mt-1 text-muted">{appliedFields.map((k) => BRIEF_FIELD_LABELS[k]).join(', ')}. Review them, then save the brief.</p>
+          </div>
+        </div>
+      )}
       <Panel id="brief-type" title="Project type">
         <FormField label="Project type" htmlFor="brief-project_type" optional>
           <Select id="brief-project_type" {...register('project_type')}>

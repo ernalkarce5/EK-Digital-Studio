@@ -98,6 +98,7 @@ export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   assignment_transferred: 'Lead moved',
   admin_note: 'Admin note',
   brief_approved: 'Brief approved',
+  questionnaire_submitted: 'Questionnaire submitted',
 };
 
 export const ACTIVITY_LABELS: Record<LeadActivityAction, string> = {
@@ -120,4 +121,12 @@ export const ACTIVITY_LABELS: Record<LeadActivityAction, string> = {
   assignment_archived: 'Lead archived',
   note_added: 'Note added',
   help_requested: 'Assistance requested',
+  questionnaire_link_created: 'Questionnaire link created',
+  questionnaire_link_resent: 'Questionnaire link replaced',
+  questionnaire_sent: 'Questionnaire sent',
+  questionnaire_revoked: 'Questionnaire link disabled',
+  questionnaire_started: 'Client started the questionnaire',
+  questionnaire_submitted: 'Questionnaire submitted',
+  questionnaire_reviewed: 'Questionnaire reviewed',
+  questionnaire_applied_to_brief: 'Questionnaire applied to brief',
 };

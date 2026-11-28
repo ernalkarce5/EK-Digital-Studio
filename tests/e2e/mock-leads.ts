@@ -5,6 +5,8 @@
  * end. The real policies/functions are verified in tests/db/leads.test.mjs.
  */
 
+import { toPayload, validateAnswers, type QuestionnaireAnswers } from '../../src/lib/questionnaire';
+
 export type Row = Record<string, unknown> & { id: string | number };
 export type Role = 'anon' | 'user' | 'admin' | 'moderator';
 export interface Session {
@@ -25,12 +27,14 @@ export const LEAD_TABLES = [
   'lead_notes',
   'internal_notifications',
   'lead_activity_logs',
+  'client_questionnaires',
 ] as const;
 
 const ACTIVE = ['new_assignment', 'contacted', 'in_discussion', 'waiting_for_client', 'brief_in_progress', 'changes_requested'];
 const WORKING = ['contacted', 'in_discussion', 'waiting_for_client', 'brief_in_progress'];
 
 export interface LeadTables {
+  client_questionnaires: Row[];
   moderators: Row[];
   lead_assignments: Row[];
   lead_clients: Row[];
@@ -115,6 +119,7 @@ export class LeadsMock {
         case 'lead_clients':
         case 'project_briefs':
         case 'communication_logs':
+        case 'client_questionnaires':
           return rows.filter((r) => this.isCurrentModOf(s.uid, r.message_id));
         case 'lead_notes':
           return rows.filter((r) => r.visibility === 'shared' && this.isCurrentModOf(s.uid, r.message_id));
@@ -365,6 +370,132 @@ export class LeadsMock {
         } else return err(400, '22023', 'Unknown review decision.');
         a.updated_at = now();
         return { status: 200, body: a };
+      }
+    }
+    return this.questionnaireRpc(fn, body, s);
+  }
+
+  // ── Client Project Questionnaire (mirrors 20261128000001; verified in tests/db/questionnaire.test.mjs) ──
+  /** Raw token → questionnaire id. Rows never carry a token or hash (like the real column grants). */
+  qTokens = new Map<string, string>();
+
+  private qLinkActive(q: Row) {
+    return !q.revoked_at && !!q.token_expires_at && new Date(String(q.token_expires_at)).getTime() > Date.now() && [...this.qTokens.values()].includes(String(q.id));
+  }
+  private qSafe(q: Row) {
+    const { answers: _a, draft_answers: _d, draft_purged_at: _p, created_at: _c, ...rest } = q;
+    void _a, _d, _p, _c;
+    return { ...rest, link_active: this.qLinkActive(q) };
+  }
+  private qByToken(token: unknown): Row | null {
+    const id = this.qTokens.get(String(token ?? ''));
+    const q = id ? this.db.client_questionnaires.find((x) => x.id === id) : undefined;
+    if (!q || q.revoked_at || new Date(String(q.token_expires_at)).getTime() <= Date.now()) return null;
+    return q;
+  }
+  private qEligible(messageId: unknown) {
+    const a = this.current(messageId);
+    return a && ACTIVE.includes(String(a.status)) ? a : null;
+  }
+
+  questionnaireRpc(fn: string, body: Record<string, unknown>, s: Session): RpcResult | null {
+    if (!fn.startsWith('questionnaire_')) return null;
+    const mid = body.p_message_id;
+    const q = this.db.client_questionnaires.find((x) => x.message_id === mid);
+    const a = this.current(mid);
+    const notMine = () => err(403, '42501', 'You can only manage questionnaires for active leads assigned to you.');
+    const newToken = (id: string) => {
+      for (const [t, v] of this.qTokens) if (v === id) this.qTokens.delete(t);
+      const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
+      this.qTokens.set(token, id);
+      return token;
+    };
+    switch (fn) {
+      case 'questionnaire_generate_link': {
+        if (s.role !== 'moderator' || !this.editableByMod(s.uid, mid)) return notMine();
+        if (q?.submitted_at) return err(400, '22023', 'This questionnaire has already been submitted.');
+        let row = q;
+        if (!row) {
+          row = { id: uuid(), message_id: mid, status: 'not_sent', send_count: 0, created_by: s.uid, created_at: now(), updated_at: now() } as Row;
+          this.db.client_questionnaires.push(row);
+        }
+        Object.assign(row, { token_expires_at: new Date(Date.now() + 30 * 864e5).toISOString(), link_generated_at: now(), revoked_at: null, updated_at: now() });
+        const token = newToken(String(row.id));
+        this.log(s, q ? 'questionnaire_link_resent' : 'questionnaire_link_created', a, mid, a?.moderator_id);
+        return { status: 200, body: { ...this.qSafe(row), token, expires_at: row.token_expires_at, resent: !!q } };
+      }
+      case 'questionnaire_mark_sent': {
+        if (s.role !== 'moderator' || !this.editableByMod(s.uid, mid)) return notMine();
+        if (!q || !this.qLinkActive(q)) return err(400, '22023', 'Generate a questionnaire link first.');
+        if (q.submitted_at) return err(400, '22023', 'This questionnaire has already been submitted.');
+        Object.assign(q, { sent_at: now(), sent_channel: body.p_channel, send_count: Number(q.send_count) + 1, status: q.status === 'not_sent' ? 'sent' : q.status, updated_at: now() });
+        const c: Row = { id: uuid(), message_id: mid, channel: body.p_channel, direction: 'outgoing', summary: 'Sent the project questionnaire link to the client.', created_at: now() };
+        this.stamp('communication_logs', s, c);
+        this.db.communication_logs.push(c);
+        this.after('communication_logs', 'insert', s, c);
+        this.log(s, 'questionnaire_sent', a, mid, a?.moderator_id, { channel: body.p_channel });
+        return { status: 200, body: this.qSafe(q) };
+      }
+      case 'questionnaire_revoke': {
+        if (s.role !== 'moderator' || !this.isCurrentModOf(s.uid, mid)) return notMine();
+        if (!q) return err(400, '22023', 'There is no active questionnaire link.');
+        for (const [t, v] of this.qTokens) if (v === q.id) this.qTokens.delete(t);
+        Object.assign(q, { revoked_at: now(), updated_at: now() });
+        this.log(s, 'questionnaire_revoked', a, mid, a?.moderator_id);
+        return { status: 200, body: this.qSafe(q) };
+      }
+      case 'questionnaire_mark_reviewed': {
+        if (s.role !== 'moderator' || !this.isCurrentModOf(s.uid, mid)) return notMine();
+        if (!q || q.status !== 'submitted') return err(400, '22023', 'Only a submitted questionnaire can be marked as reviewed.');
+        Object.assign(q, { status: 'reviewed', reviewed_at: now(), reviewed_by: s.uid, updated_at: now() });
+        this.log(s, 'questionnaire_reviewed', a, mid, a?.moderator_id);
+        return { status: 200, body: this.qSafe(q) };
+      }
+      case 'questionnaire_record_applied': {
+        if (s.role !== 'moderator' || !this.editableByMod(s.uid, mid)) return notMine();
+        if (!q?.submitted_at) return err(400, '22023', 'The questionnaire has not been submitted yet.');
+        this.log(s, 'questionnaire_applied_to_brief', a, mid, a?.moderator_id);
+        return { status: 200, body: null };
+      }
+      case 'questionnaire_open': {
+        const row = this.qByToken(body.p_token);
+        if (!row) return { status: 200, body: { ok: false, error: 'unavailable' } };
+        const first = String(this.db.contact_messages.find((m) => m.id === row.message_id)?.full_name ?? '').split(' ')[0] || null;
+        if (row.submitted_at) return { status: 200, body: { ok: true, status: 'submitted', first_name: first } };
+        if (!this.qEligible(row.message_id)) return { status: 200, body: { ok: false, error: 'unavailable' } };
+        row.first_opened_at ??= now();
+        row.last_client_activity_at = now();
+        return {
+          status: 200,
+          body: { ok: true, status: 'open', first_name: first, draft: row.draft_answers ?? {}, draft_saved_at: row.draft_saved_at ?? null, expires_at: row.token_expires_at },
+        };
+      }
+      case 'questionnaire_save_draft':
+      case 'questionnaire_submit': {
+        const final = fn === 'questionnaire_submit';
+        if (final && (body.p_website || Number(body.p_elapsed_ms ?? 0) < 1500)) return { status: 200, body: { ok: true, status: 'submitted' } };
+        const row = this.qByToken(body.p_token);
+        if (!row) return { status: 200, body: { ok: false, error: 'unavailable' } };
+        if (row.submitted_at) return { status: 200, body: final ? { ok: true, status: 'submitted' } : { ok: false, error: 'submitted' } };
+        const ea = this.qEligible(row.message_id);
+        if (!ea) return { status: 200, body: { ok: false, error: 'unavailable' } };
+        const answers = toPayload((body.p_answers ?? {}) as QuestionnaireAnswers);
+        const problems = validateAnswers(answers, final);
+        const field = Object.keys(problems)[0];
+        if (field) return { status: 200, body: { ok: false, error: 'invalid', field, message: problems[field as keyof typeof problems] } };
+        const client: Session = { role: 'anon', uid: null };
+        const qname = String(this.db.contact_messages.find((m) => m.id === row.message_id)?.full_name ?? '');
+        if (!final) {
+          const first = ['not_sent', 'sent'].includes(String(row.status));
+          Object.assign(row, { draft_answers: answers, draft_saved_at: now(), last_client_activity_at: now(), status: first ? 'in_progress' : row.status, updated_at: now() });
+          row.first_opened_at ??= now();
+          if (first) this.log(client, 'questionnaire_started', ea, row.message_id, ea.moderator_id, { by: 'client' });
+          return { status: 200, body: { ok: true, saved_at: row.draft_saved_at } };
+        }
+        Object.assign(row, { answers, submitted_at: now(), status: 'submitted', draft_answers: null, draft_saved_at: null, last_client_activity_at: now(), updated_at: now() });
+        this.log(client, 'questionnaire_submitted', ea, row.message_id, ea.moderator_id, { by: 'client', client: qname });
+        this.notify(ea.moderator_id, 'questionnaire_submitted', `Questionnaire submitted: ${qname}`, 'The client submitted the project questionnaire.', row.message_id, ea.id);
+        return { status: 200, body: { ok: true, status: 'submitted' } };
       }
     }
     return null;

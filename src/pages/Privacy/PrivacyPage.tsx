@@ -6,7 +6,7 @@ import { useSite } from '@/contexts/SiteContext';
 import { AnalyticsOptOut } from '@/components/common/AnalyticsOptOut';
 
 /** Update this date whenever the policy text changes. */
-export const PRIVACY_LAST_UPDATED = '24 November 2026';
+export const PRIVACY_LAST_UPDATED = '28 November 2026';
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -25,6 +25,7 @@ const TOC = [
   ['controller', 'Who is responsible'],
   ['contact-form', 'Contact form'],
   ['browsing', 'Visiting the website'],
+  ['questionnaires', 'Project questionnaires'],
   ['statistics', 'Visit statistics'],
   ['storage', 'Cookies and local storage'],
   ['processors', 'Service providers'],
@@ -124,6 +125,39 @@ export default function PrivacyPage() {
             </p>
           </Section>
 
+          <Section id="questionnaires" title="Project questionnaires">
+            <p>
+              If you sent an inquiry, the team member handling it may send you a personal link to a project questionnaire. You
+              don&apos;t need an account to use it.
+            </p>
+            <p>
+              <strong>What is processed:</strong> the answers you give (type of website, project name and description, desired
+              features, design preferences, links you share, budget range and currency, deadline and urgency, and any other
+              requirements), together with when the questionnaire was opened, saved and submitted. Please don&apos;t include
+              information we don&apos;t need; anything you type is stored as written.
+            </p>
+            <p>
+              <strong>How it is stored:</strong> with your inquiry in the website&apos;s database (Supabase), visible only to the
+              team member assigned to your inquiry and the site owner. Answers are saved as you type so you can continue later,
+              also on another device. Nothing is sent by email automatically and nothing is shared with third parties apart from
+              the hosting and database providers listed below, including their request logs and backups.
+            </p>
+            <p>
+              <strong>The link</strong> is personal: anyone who has it can open the questionnaire, so please don&apos;t forward it.
+              It works for 30 days, can be disabled by us at any time, and stops working when a new link is sent. After you submit,
+              your answers can&apos;t be changed through the link; contact us if something needs correcting.
+            </p>
+            <p>
+              <strong>Purpose and legal basis:</strong> preparing a proposal at your request, before a possible contract (GDPR Art.
+              6(1)(b)).
+            </p>
+            <p>
+              <strong>How long it is kept:</strong> submitted answers are kept together with your inquiry, under the same rules
+              described in &ldquo;How long data is kept&rdquo;, and are deleted when the inquiry is deleted. Answers saved but never
+              submitted are deleted automatically 30 days after the link expires or is disabled.
+            </p>
+          </Section>
+
           <Section id="statistics" title="Visit statistics">
             <p>
               To understand which pages are useful, the website counts page views with its own statistics, without
@@ -205,7 +239,9 @@ export default function PrivacyPage() {
               when no longer needed. You can ask for your data to be deleted at any time.
             </p>
             <p>
-              Visit statistics are deleted automatically after 13 months. The daily random value used for visitor codes is
+              Questionnaire answers that were saved but never submitted are deleted automatically 30 days after the link expires
+              or is disabled; submitted answers are kept and deleted together with the inquiry. Visit statistics are deleted
+              automatically after 13 months. The daily random value used for visitor codes is
               deleted after its day. Deleted data can remain in the database provider&apos;s backups until those expire.
             </p>
           </Section>

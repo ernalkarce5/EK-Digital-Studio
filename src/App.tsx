@@ -52,6 +52,9 @@ const ModeratorBriefs = lazy(() => import('@/pages/Moderator/BriefsPage'));
 const ModeratorArchive = lazy(() => import('@/pages/Moderator/ArchivePage'));
 const ModeratorProfile = lazy(() => import('@/pages/Moderator/ProfilePage'));
 
+// Client questionnaire: standalone (no public navigation, no analytics tracker), opened via a secret link.
+const ClientQuestionnaire = lazy(() => import('@/pages/Questionnaire/QuestionnairePage'));
+
 /** Page inside a layout (navbar or dashboard stays visible): compact branded loader. */
 const page = (node: ReactNode) => <Suspense fallback={<BrandLoader size="md" />}>{node}</Suspense>;
 /** Top-level screen (sign-in pages, dashboard shells): full-screen branded loader. */
@@ -99,6 +102,7 @@ const router = createBrowserRouter([
       { path: 'analytics', element: page(<AdminAnalytics />) },
     ],
   },
+  { path: 'questionnaire', element: screen(<ClientQuestionnaire />) },
   { path: 'moderator/login', element: screen(<AdminLogin area="moderator" />) },
   { path: 'moderator/forgot-password', element: screen(<AdminForgotPassword area="moderator" />) },
   { path: 'moderator/set-password', element: screen(<AdminResetPassword area="moderator" />) },

@@ -47,7 +47,10 @@ import { cn, formatDate } from '@/lib/utils';
 import type { LeadStatus } from '@/types/database';
 import { LeadStatusBadge } from './LeadStatusBadge';
 import { ClientInfoForm } from './ClientInfoForm';
-import { BriefForm, BriefView } from './BriefForm';
+import { BriefForm, BriefView, type BriefPrefillRequest } from './BriefForm';
+import { QuestionnairePanel } from './QuestionnairePanel';
+import { recordQuestionnaireApplied } from '@/services/questionnaires';
+import { BRIEF_FIELD_LABELS, type BriefPrefill } from '@/lib/questionnaire';
 import { CommunicationPanel } from './CommunicationPanel';
 import { NotesPanel } from './NotesPanel';
 import { ActivityList } from './ActivityList';
@@ -57,11 +60,13 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'client', label: 'Client' },
   { id: 'brief', label: 'Project brief' },
+  { id: 'questionnaire', label: 'Questionnaire', moderatorOnly: true },
   { id: 'communication', label: 'Communication' },
   { id: 'notes', label: 'Notes' },
   { id: 'history', label: 'History' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
+const tabsFor = (role: 'admin' | 'moderator') => TABS.filter((t) => role === 'moderator' || !('moderatorOnly' in t));
 
 type Dialog = null | 'submit' | 'return' | 'transfer' | 'retrieve' | 'assign' | 'approve' | 'changes' | 'override';
 
@@ -69,7 +74,8 @@ type Dialog = null | 'submit' | 'return' | 'transfer' | 'retrieve' | 'assign' | 
 export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageId: string; role: 'admin' | 'moderator'; backTo: string; backLabel: string }) {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const tab = (TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'overview') as TabId;
+  // The Questionnaire tab exists only for moderators (admins keep the existing brief review workflow).
+  const tab = (tabsFor(role).some((t) => t.id === params.get('tab')) ? params.get('tab') : 'overview') as TabId;
   const ws = useAsync(() => getLeadWorkspace(messageId), [messageId]);
   const extras = useAsync(
     () => (role === 'admin' ? Promise.all([listAssignmentHistory(messageId), listModerators()]) : Promise.resolve(null)),
@@ -79,6 +85,8 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
   const [busy, setBusy] = useState(false);
   const [nextStatus, setNextStatus] = useState<LeadStatus | ''>('');
   const [override, setOverride] = useState<{ status: LeadStatus | ''; note: string }>({ status: '', note: '' });
+  const [briefPrefill, setBriefPrefill] = useState<BriefPrefillRequest | null>(null);
+  const [prefillConflict, setPrefillConflict] = useState<{ values: BriefPrefill; fields: Array<keyof BriefPrefill> } | null>(null);
 
   const names = useMemo(() => {
     const map = new Map<string, string>();
@@ -88,7 +96,9 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
     return map;
   }, [extras.data, ws.data]);
 
-  if (ws.loading) return <LoadingBlock />;
+  // Spinner only on the first load: refreshes keep the page (and in-memory state such as a
+  // just-generated questionnaire link) mounted.
+  if (ws.loading && !ws.data) return <LoadingBlock />;
   if (ws.error) return <ErrorState message={ws.error} onRetry={ws.reload} />;
   if (!ws.data) {
     return (
@@ -126,6 +136,31 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
       setBusy(false);
     }
   }
+
+  /** Questionnaire → existing Project Brief: never overwrites the moderator's text without asking. */
+  const requestBriefPrefill = (values: BriefPrefill) => {
+    const saved = (data.brief ?? {}) as unknown as Record<string, unknown>;
+    const fields = (Object.keys(values) as Array<keyof BriefPrefill>).filter((k) => {
+      const existing = saved[k] == null ? '' : String(saved[k]).trim();
+      return existing !== '' && existing !== String(values[k]).trim();
+    });
+    if (fields.length) setPrefillConflict({ values, fields });
+    else void applyBriefPrefill(values, 'all');
+  };
+  const applyBriefPrefill = async (values: BriefPrefill, mode: 'empty' | 'all') => {
+    setBusy(true);
+    try {
+      await recordQuestionnaireApplied(messageId); // audit entry; does NOT mark the questionnaire reviewed
+      setPrefillConflict(null);
+      setBriefPrefill({ values, mode, nonce: Date.now() });
+      setParams({ tab: 'brief' }, { replace: true });
+      ws.reload();
+    } catch (err) {
+      toast.error(toErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const copyEmail = () =>
     navigator.clipboard
@@ -238,7 +273,7 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
       {/* Tabs */}
       <div className="sticky top-14 z-20 -mx-4 mb-6 border-b border-line bg-bg/90 px-4 backdrop-blur md:-mx-8 md:px-8 lg:top-0" role="tablist" aria-label="Lead sections">
         <div className="scrollbar-none flex gap-1 overflow-x-auto py-2">
-          {TABS.map((t) => (
+          {tabsFor(role).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -354,7 +389,14 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
 
       {tab === 'brief' &&
         (editable ? (
-          <BriefForm messageId={messageId} brief={data.brief} editable onSaved={(brief) => update({ brief })} />
+          <BriefForm
+            messageId={messageId}
+            brief={data.brief}
+            editable
+            onSaved={(brief) => update({ brief })}
+            prefill={briefPrefill}
+            onPrefillApplied={() => setBriefPrefill(null)}
+          />
         ) : (
           <BriefView brief={data.brief} />
         ))}
@@ -402,7 +444,44 @@ export function LeadWorkspace({ messageId, role, backTo, backLabel }: { messageI
         </div>
       )}
 
+      {tab === 'questionnaire' && isModerator && (
+        <QuestionnairePanel
+          messageId={messageId}
+          clientName={message.full_name}
+          clientEmail={message.email}
+          editable={editable}
+          onApplyToBrief={requestBriefPrefill}
+          onChanged={ws.reload}
+        />
+      )}
+
       {/* Dialogs */}
+      <Modal
+        open={!!prefillConflict}
+        onClose={busy ? () => {} : () => setPrefillConflict(null)}
+        dismissible={!busy}
+        title="Some brief fields already have your text"
+        description="Choose how to use the questionnaire answers. Nothing is saved until you save the brief."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPrefillConflict(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="secondary" loading={busy} onClick={() => prefillConflict && void applyBriefPrefill(prefillConflict.values, 'all')}>
+              Replace these fields
+            </Button>
+            <Button loading={busy} onClick={() => prefillConflict && void applyBriefPrefill(prefillConflict.values, 'empty')}>
+              Fill empty fields only
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">These fields already contain different text:</p>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+          {prefillConflict?.fields.map((k) => <li key={k}>{BRIEF_FIELD_LABELS[k]}</li>)}
+        </ul>
+      </Modal>
       <Modal
         open={dialog === 'submit'}
         onClose={busy ? () => {} : () => setDialog(null)}

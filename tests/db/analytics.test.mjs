@@ -4,6 +4,7 @@
 //
 //   npm run test:db
 import { PGlite } from '@electric-sql/pglite';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,9 @@ const SUPABASE_STUB = `
   $$;
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
+  -- Supabase installs pgcrypto in the "extensions" schema.
+  create schema extensions;
+  create extension pgcrypto with schema extensions;
   create schema storage;
   create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
   create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text, owner uuid);
@@ -38,7 +42,7 @@ const ADMIN = '11111111-1111-1111-1111-111111111111';
 const USER = '22222222-2222-2222-2222-222222222222';
 const MOD1 = '33333333-3333-3333-3333-333333333333';
 
-const db = new PGlite();
+const db = new PGlite({ extensions: { pgcrypto } });
 let passed = 0;
 let failed = 0;
 const failures = [];

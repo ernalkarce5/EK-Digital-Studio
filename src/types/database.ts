@@ -288,7 +288,8 @@ export type NotificationType =
   | 'changes_requested'
   | 'assignment_transferred'
   | 'admin_note'
-  | 'brief_approved';
+  | 'brief_approved'
+  | 'questionnaire_submitted';
 
 export interface InternalNotification {
   id: number;
@@ -321,7 +322,15 @@ export type LeadActivityAction =
   | 'brief_approved'
   | 'assignment_archived'
   | 'note_added'
-  | 'help_requested';
+  | 'help_requested'
+  | 'questionnaire_link_created'
+  | 'questionnaire_link_resent'
+  | 'questionnaire_sent'
+  | 'questionnaire_revoked'
+  | 'questionnaire_started'
+  | 'questionnaire_submitted'
+  | 'questionnaire_reviewed'
+  | 'questionnaire_applied_to_brief';
 
 export interface LeadActivity {
   id: number;
